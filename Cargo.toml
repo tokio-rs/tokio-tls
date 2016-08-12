@@ -1,0 +1,12 @@
+[package]
+name = "tokio-ssl"
+version = "0.1.0"
+authors = ["Carl Lerche <me@carllerche.com>"]
+
+[dependencies]
+tokio = { git = "https://github.com/tokio-rs/tokio" }
+log = "0.3.6"
+openssl = "0.8.0"
+
+[dev-dependencies]
+env_logger = "0.3.4"
