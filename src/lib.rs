@@ -1,23 +1,70 @@
-extern crate tokio;
-extern crate openssl;
+//! Async TLS streams
+//!
+//! This library is an implementation of TLS streams using the most appropriate
+//! system library by default for negotiating the connection. That is, on
+//! Windows this library uses SChannel, on OSX it uses SecureTransport, and on
+//! other platforms it uses OpenSSL. The usage of OpenSSL can optionally be
+//! forced with the `force-openssl` feature of this crate.
+//!
+//! Each TLS stream implements the `Read` and `Write` traits to interact and
+//! interoperate with the rest of the futures I/O ecosystem. Client connections
+//! initiated from this crate verify hostnames automatically and by default.
 
+#![deny(missing_docs)]
+
+extern crate futures;
+#[macro_use]
+extern crate cfg_if;
 #[macro_use]
 extern crate log;
 
-use tokio::io::{Stream, Readiness};
-use openssl::crypto::pkey::PKey;
-use openssl::ssl::{SSL_OP_NO_SSLV2, SSL_OP_NO_SSLV3, SSL_OP_NO_COMPRESSION};
-use openssl::ssl::{self, IntoSsl, SSL_VERIFY_PEER};
-use openssl::ssl::Error::{WantRead, WantWrite};
-use openssl::x509::X509;
-use std::mem;
 use std::io::{self, Read, Write};
 
-/// A `Stream` providing SSL/TLS encryption
-pub struct SslStream<S> {
-    state: State<S>,
-    last_read_err: Option<ssl::Error>,
-    last_write_err: Option<ssl::Error>,
+use futures::{Poll, Future};
+
+cfg_if! {
+    if #[cfg(any(feature = "force-openssl",
+                 all(not(target_os = "macos"),
+                     not(target_os = "windows"))))] {
+        mod openssl;
+        use self::openssl as imp;
+
+        /// Backend-specific extension traits.
+        pub mod backend {
+
+            /// Extension traits specific to the OpenSSL backend.
+            pub mod openssl {
+                pub use openssl::ServerContextExt;
+                pub use openssl::ClientContextExt;
+            }
+        }
+    } else if #[cfg(target_os = "macos")] {
+        mod secure_transport;
+        use self::secure_transport as imp;
+
+        /// Backend-specific extension traits.
+        pub mod backend {
+
+            /// Extension traits specific to the SecureTransport backend.
+            pub mod secure_transport {
+                pub use secure_transport::ServerContextExt;
+                pub use secure_transport::ClientContextExt;
+            }
+        }
+    } else {
+        mod schannel;
+        use self::schannel as imp;
+
+        /// Backend-specific extension traits.
+        pub mod backend {
+
+            /// Extension traits specific to the SChannel backend.
+            pub mod schannel {
+                pub use schannel::ServerContextExt;
+                pub use schannel::ClientContextExt;
+            }
+        }
+    }
 }
 
 /// A context used to initiate server-side connections of a TLS server.
@@ -29,161 +76,61 @@ pub struct SslStream<S> {
 /// `new` constructor.
 ///
 /// For some examples of how to create a context, though, you can take a look at
-/// the test suite of `tokio-tls`.
+/// the test suite of `futures-tls`.
 pub struct ServerContext {
-    inner: ssl::SslContext,
+    inner: imp::ServerContext,
 }
 
+/// A context used to initiate client-side connections to a TLS server.
+///
+/// Client context by default perform hostname validation of connections issued
+/// by ensuring that certificates sent by the server are trusted by the system
+/// and are indeed valid.
+///
+/// Normally a `ClientContext` doesn't need extra configuration, but extra
+/// configuration can be performed by the backend-specific extension traits.
 pub struct ClientContext {
-    inner: ssl::SslContext,
+    inner: imp::ClientContext,
 }
 
-enum State<S> {
-    Handshake(Handshake<S>),
-    Established(ssl::SslStream<S>),
+/// A wrapper around an underlying raw stream which implements the TLS or SSL
+/// protocol.
+///
+/// A `TlsStream<S>` represents a handshake that has been completed successfully
+/// and both the server and the client are ready for receiving and sending
+/// data. Bytes read from a `TlsStream` are decrypted from `S` and bytes written
+/// to a `TlsStream` are encrypted when passing through to `S`.
+pub struct TlsStream<S> {
+    inner: imp::TlsStream<S>,
 }
 
-enum Handshake<S> {
-    Error(io::Error),
-    Stream(ssl::SslStream<S>),
-    Interrupted(ssl::MidHandshakeSslStream<S>),
-    Empty,
+/// A future returned from `ClientContext::handshake` used to represent an
+/// in-progress TLS handshake.
+///
+/// This future will resolve to a `TlsStream<S>` once the handshake is completed
+/// or an I/O error if it otherwise cannot be completed (or verified).
+pub struct ClientHandshake<S> {
+    inner: imp::ClientHandshake<S>,
 }
 
-/*
- *
- * ===== SslStream =====
- *
- */
-
-impl<S: Stream> SslStream<S> {
-    fn is_ready(&self) -> bool {
-        if let Some(s) = self.state.established() {
-            match self.last_read_err {
-                Some(WantRead(..)) => s.get_ref().is_readable(),
-                Some(WantWrite(..)) => s.get_ref().is_writable(),
-                _ => true,
-            }
-        } else {
-            false
-        }
-    }
-
-    fn try_complete_handshake(&mut self) -> io::Result<()> {
-        let established;
-
-        match self.state {
-            State::Handshake(ref mut h) => {
-                if let Some(s) = try!(h.try_complete()) {
-                    established = s;
-                } else {
-                    return Ok(());
-                }
-            }
-            _ => return Ok(()),
-        }
-
-        self.state = State::Established(established);
-
-        Ok(())
-    }
+/// A future returned from `ServerContext::handshake` used to represent an
+/// in-progress TLS handshake.
+///
+/// This future will resolve to a `TlsStream<S>` once the handshake is completed
+/// or an I/O error if it otherwise cannot be completed (or verified).
+pub struct ServerHandshake<S> {
+    inner: imp::ServerHandshake<S>,
 }
 
-impl<S: Stream> Read for SslStream<S> {
-    fn read(&mut self, buf: &mut [u8]) -> io::Result<usize> {
-        if let Some(s) = self.state.established_mut() {
-            map_err(&mut self.last_read_err, s.ssl_read(buf))
-        } else {
-            Err(would_block())
-        }
-    }
-}
-
-impl<S: Stream> Write for SslStream<S> {
-    fn write(&mut self, buf: &[u8]) -> io::Result<usize> {
-        if let Some(s) = self.state.established_mut() {
-            map_err(&mut self.last_write_err, s.ssl_write(buf))
-        } else {
-            Err(would_block())
-        }
-    }
-
-    fn flush(&mut self) -> io::Result<()> {
-        try!(self.try_complete_handshake());
-
-        if let Some(s) = self.state.established_mut() {
-            match s.flush() {
-                Ok(()) => Ok(()),
-                Err(e) => {
-                    if e.kind() == io::ErrorKind::WouldBlock {
-                        self.last_write_err = Some(WantWrite(would_block()));
-                    }
-
-                    Err(e)
-                }
-            }
-        } else {
-            Err(would_block())
-        }
-    }
-}
-
-impl<S: Stream> Readiness for SslStream<S> {
-    fn is_readable(&self) -> bool {
-        self.is_ready()
-    }
-
-    fn is_writable(&self) -> bool {
-        self.is_ready()
-    }
-}
-
-fn map_err<T>(last_err: &mut Option<ssl::Error>,
-              res: Result<T, ssl::error::Error>) -> io::Result<T> {
-
-    *last_err = None;
-
-    match res {
-        Ok(t) => Ok(t),
-        Err(e @ WantRead(..)) => {
-            *last_err = Some(e);
-            Err(would_block())
-        }
-        Err(e @ WantWrite(..)) => {
-            *last_err = Some(e);
-            Err(would_block())
-        }
-        Err(e) => {
-            Err(io::Error::new(io::ErrorKind::Other, e))
-        }
-    }
-}
-
-/*
- *
- * ===== ServerContext =====
- *
- */
-
-impl ServerContext {
-
-    /// Create a new `ServerContext`
-    pub fn new(cert: &X509, key: &PKey) -> io::Result<ServerContext> {
-        let mut cx = try!(ssl::SslContext::new(ssl::SslMethod::Sslv23)
-                              .map_err(translate_ssl));
-
-        // lifted from rust-native-tls
-        cx.set_options(SSL_OP_NO_SSLV2 |
-                       SSL_OP_NO_SSLV3 |
-                       SSL_OP_NO_COMPRESSION);
-
-        let list = "ALL!EXPORT!EXPORT40!EXPORT56!aNULL!LOW!RC4@STRENGTH";
-        try!(cx.set_cipher_list(list).map_err(translate_ssl));
-        try!(cx.set_certificate(cert).map_err(translate_ssl));
-        try!(cx.set_private_key(key).map_err(translate_ssl));
-        try!(cx.check_private_key().map_err(translate_ssl));
-
-        Ok(ServerContext { inner: cx })
+impl ClientContext {
+    /// Creates a new client context ready for connecting to a remote server.
+    ///
+    /// The client context can be optionally configured through backend-specific
+    /// extension traits, but by default client contexts will verify
+    /// certificates against the system certificate store and otherwise verify
+    /// that certificates are indeed valid.
+    pub fn new() -> io::Result<ClientContext> {
+        imp::ClientContext::new().map(|s| ClientContext { inner: s })
     }
 
     /// Performs a handshake with the given I/O stream to resolve to an actual
@@ -194,109 +141,80 @@ impl ServerContext {
     /// handshake completes successfully, or an error if an erroneous event
     /// otherwise happens.
     ///
+    /// The provided `domain` argument is the domain that this client intended
+    /// to connect to. The TLS/SSL backend will verify that the certificate
+    /// provided by the server indeed matches the `domain` provided. The
+    /// returned future will only resolve successfully if the domain matches,
+    /// otherwise an error will be returned.
+    ///
+    /// The given I/O stream should be a freshly connected client (typically a
+    /// TCP stream) ready to negotiate the TLS connection.
+    pub fn handshake<S>(self,
+                        domain: &str,
+                        stream: S)
+                        -> ClientHandshake<S>
+        where S: Read + Write,
+    {
+        ClientHandshake { inner: self.inner.handshake(domain, stream) }
+    }
+}
+
+impl ServerContext {
+    /// Performs a handshake with the given I/O stream to resolve to an actual
+    /// I/O stream.
+    ///
+    /// This function will consume this context and return a future which will
+    /// either resolve to a `TlsStream<S>` ready for reading/writing if the
+    /// handshake completes successfully, or an error if an erroneous event
+    /// otherwise happens.
+    ///
     /// The given I/O stream should be an accepted client of this server which
     /// is ready to negotiate the TLS connection.
-    pub fn establish<S>(self, stream: S) -> SslStream<S>
-        where S: Stream,
+    pub fn handshake<S>(self, stream: S) -> ServerHandshake<S>
+        where S: Read + Write,
     {
-        let accept = ssl::SslStream::accept(&self.inner, stream);
-        let handshake = Handshake::new(accept);
-        let state = State::Handshake(handshake);
-
-        SslStream {
-            state: state,
-            last_read_err: None,
-            last_write_err: None,
-        }
+        ServerHandshake { inner: self.inner.handshake(stream) }
     }
 }
 
-/*
- *
- * ===== Handshake =====
- *
- */
+impl<S> Future for ClientHandshake<S>
+    where S: Read + Write,
+{
+    type Item = TlsStream<S>;
+    type Error = io::Error;
 
-impl<S: Stream> Handshake<S> {
-    fn new(res: Result<ssl::SslStream<S>,
-                       ssl::HandshakeError<S>>)
-           -> Handshake<S> {
-        match res {
-            Ok(s) => Handshake::Stream(s),
-            Err(ssl::HandshakeError::Failure(e)) => {
-                Handshake::Error(io::Error::new(io::ErrorKind::Other, e))
-            }
-            Err(ssl::HandshakeError::Interrupted(s)) => {
-                Handshake::Interrupted(s)
-            }
-        }
-    }
-
-    fn try_complete(&mut self) -> io::Result<Option<ssl::SslStream<S>>> {
-        debug!("let's see how the handshake went");
-
-        let mut stream = match mem::replace(self, Handshake::Empty) {
-            Handshake::Error(e) => return Err(e),
-            Handshake::Empty => panic!("can't poll handshake twice"),
-            Handshake::Stream(s) => return Ok(Some(s)),
-            Handshake::Interrupted(s) => s,
-        };
-
-        debug!("I/O is ready... somewhere");
-        match *stream.error() {
-            WantRead(_) if stream.get_ref().is_readable() => {}
-            WantWrite(_) if stream.get_ref().is_writable() => {}
-            WantRead(_) |
-            WantWrite(_) => {
-                *self = Handshake::Interrupted(stream);
-                return Ok(None);
-            }
-            _ => panic!(), // TODO: handle this
-        }
-
-        // TODO: dedup with Handshake::new
-        debug!("openssl handshake again");
-        match stream.handshake() {
-            Ok(s) => Ok(Some(s)),
-            Err(ssl::HandshakeError::Failure(e)) => {
-                debug!("openssl handshake failure: {:?}", e);
-                Err(io::Error::new(io::ErrorKind::Other, e))
-            }
-            Err(ssl::HandshakeError::Interrupted(s)) => {
-                debug!("handshake not completed");
-                *self = Handshake::Interrupted(s);
-                Ok(None)
-            }
-        }
+    fn poll(&mut self) -> Poll<TlsStream<S>, io::Error> {
+        self.inner.poll().map(|s| TlsStream { inner: s })
     }
 }
 
-/*
- *
- * ===== State =====
- *
- */
+impl<S> Future for ServerHandshake<S>
+    where S: Read + Write,
+{
+    type Item = TlsStream<S>;
+    type Error = io::Error;
 
-impl<S: Stream> State<S> {
-    fn established(&self) -> Option<&ssl::SslStream<S>> {
-        match *self {
-            State::Established(ref s) => Some(s),
-            _ => None,
-        }
-    }
-
-    fn established_mut(&mut self) -> Option<&mut ssl::SslStream<S>> {
-        match *self {
-            State::Established(ref mut s) => Some(s),
-            _ => None,
-        }
+    fn poll(&mut self) -> Poll<TlsStream<S>, io::Error> {
+        self.inner.poll().map(|s| TlsStream { inner: s })
     }
 }
 
-fn translate_ssl(err: openssl::error::ErrorStack) -> io::Error {
-    io::Error::new(io::ErrorKind::Other, err)
+impl<S> Read for TlsStream<S>
+    where S: Read + Write,
+{
+    fn read(&mut self, buf: &mut [u8]) -> io::Result<usize> {
+        self.inner.read(buf)
+    }
 }
 
-fn would_block() -> io::Error {
-    io::Error::new(io::ErrorKind::WouldBlock, "would block")
+impl<S> Write for TlsStream<S>
+    where S: Read + Write,
+{
+    fn write(&mut self, buf: &[u8]) -> io::Result<usize> {
+        self.inner.write(buf)
+    }
+
+    fn flush(&mut self) -> io::Result<()> {
+        self.inner.flush()
+    }
 }
