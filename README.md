@@ -13,13 +13,13 @@ First, add this to your `Cargo.toml`:
 
 ```toml
 [dependencies]
-futures-tls = { git = "https://github.com/tokio-rs/tokio-tls" }
+tokio-tls = { git = "https://github.com/tokio-rs/tokio-tls" }
 ```
 
 Next, add this to your crate:
 
 ```rust
-extern crate futures_tls;
+extern crate tokio_tls;
 ```
 
 # License
