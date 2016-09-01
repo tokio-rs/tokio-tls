@@ -23,7 +23,12 @@ macro_rules! t {
 }
 
 cfg_if! {
-    if #[cfg(any(feature = "force-openssl",
+    if #[cfg(feature = "force-rustls")] {
+        fn assert_bad_hostname_error(err: &Error) {
+            let err = err.to_string();
+            assert!(err.contains("CertNotValidForName"), "bad error: {}", err);
+        }
+    } else if #[cfg(any(feature = "force-openssl",
                  all(not(target_os = "macos"),
                      not(target_os = "windows"))))] {
         extern crate openssl;

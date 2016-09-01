@@ -22,7 +22,28 @@ macro_rules! t {
 }
 
 cfg_if! {
-    if #[cfg(any(feature = "force-openssl",
+    if #[cfg(feature = "force-rustls")] {
+        fn verify_failed(err: &Error, s:  &str) {
+            let err = err.to_string();
+            assert!(err.contains(s), "bad error: {}", err);
+        }
+
+        fn assert_expired_error(err: &Error) {
+            verify_failed(err, "CertExpired");
+        }
+
+        fn assert_wrong_host(err: &Error) {
+            verify_failed(err, "CertNotValidForName");
+        }
+
+        fn assert_self_signed(err: &Error) {
+            verify_failed(err, "UnknownIssuer");
+        }
+
+        fn assert_untrusted_root(err: &Error) {
+            verify_failed(err, "UnknownIssuer");
+        }
+    } else if #[cfg(any(feature = "force-openssl",
                  all(not(target_os = "macos"),
                      not(target_os = "windows"))))] {
         extern crate openssl;

@@ -8,7 +8,7 @@ extern crate cfg_if;
 
 use std::io::{self, Read, Write};
 
-use futures::Future;
+use futures::{Future, Async};
 use futures::stream::Stream;
 use tokio_core::io::{read_to_end, copy, Io};
 use tokio_core::reactor::Core;
@@ -23,9 +23,107 @@ macro_rules! t {
 }
 
 cfg_if! {
-    if #[cfg(any(feature = "force-openssl",
-                 all(not(target_os = "macos"),
-                     not(target_os = "windows"))))] {
+    if #[cfg(feature = "rustls")] {
+        extern crate webpki;
+        extern crate untrusted;
+
+        use std::env;
+        use std::fs::File;
+        use std::process::Command;
+        use std::sync::{ONCE_INIT, Once};
+
+        use tokio_tls::backend::rustls::ClientContextExt;
+        use tokio_tls::backend::rustls::ServerContextExt;
+        use untrusted::Input;
+        use webpki::trust_anchor_util;
+
+        fn server_cx() -> io::Result<ServerContext> {
+            let mut cx = ServerContext::new();
+
+            let (cert, key) = keys();
+            cx.config_mut()
+              .set_single_cert(vec![cert.to_vec()], key.to_vec());
+
+            Ok(cx)
+        }
+
+        fn configure_client(cx: &mut ClientContext) {
+            let (cert, _key) = keys();
+            let cert = Input::from(cert);
+            let anchor = trust_anchor_util::cert_der_as_trust_anchor(cert).unwrap();
+            cx.config_mut().root_store.add_trust_anchors(&[anchor]);
+        }
+
+        // Like OpenSSL we generate certificates on the fly, but for OSX we
+        // also have to put them into a specific keychain. We put both the
+        // certificates and the keychain next to our binary.
+        //
+        // Right now I don't know of a way to programmatically create a
+        // self-signed certificate, so we just fork out to the `openssl` binary.
+        fn keys() -> (&'static [u8], &'static [u8]) {
+            static INIT: Once = ONCE_INIT;
+            static mut KEYS: *mut (Vec<u8>, Vec<u8>) = 0 as *mut _;
+
+            INIT.call_once(|| {
+                let path = t!(env::current_exe());
+                let path = path.parent().unwrap();
+                let keyfile = path.join("test.key");
+                let certfile = path.join("test.crt");
+                let config = path.join("openssl.config");
+
+                File::create(&config).unwrap().write_all(b"\
+                    [req]\n\
+                    distinguished_name=dn\n\
+                    [ dn ]\n\
+                    CN=localhost\n\
+                    [ ext ]\n\
+                    basicConstraints=CA:FALSE,pathlen:0\n\
+                    subjectAltName = @alt_names
+                    [alt_names]
+                    DNS.1 = localhost
+                ").unwrap();
+
+                let subj = "/C=US/ST=Denial/L=Sprintfield/O=Dis/CN=localhost";
+                let output = t!(Command::new("openssl")
+                                        .arg("req")
+                                        .arg("-nodes")
+                                        .arg("-x509")
+                                        .arg("-newkey").arg("rsa:2048")
+                                        .arg("-config").arg(&config)
+                                        .arg("-extensions").arg("ext")
+                                        .arg("-subj").arg(subj)
+                                        .arg("-keyout").arg(&keyfile)
+                                        .arg("-out").arg(&certfile)
+                                        .arg("-days").arg("1")
+                                        .output());
+                assert!(output.status.success());
+
+                let crtout = t!(Command::new("openssl")
+                                        .arg("x509")
+                                        .arg("-outform").arg("der")
+                                        .arg("-in").arg(&certfile)
+                                        .output());
+                assert!(crtout.status.success());
+                let keyout = t!(Command::new("openssl")
+                                        .arg("rsa")
+                                        .arg("-outform").arg("der")
+                                        .arg("-in").arg(&keyfile)
+                                        .output());
+                assert!(keyout.status.success());
+
+                let cert = crtout.stdout;
+                let key = keyout.stdout;
+                unsafe {
+                    KEYS = Box::into_raw(Box::new((cert, key)));
+                }
+            });
+            unsafe {
+                (&(*KEYS).0, &(*KEYS).1)
+            }
+        }
+    } else if #[cfg(any(feature = "force-openssl",
+                        all(not(target_os = "macos"),
+                            not(target_os = "windows"))))] {
         extern crate openssl;
 
         use std::fs::File;
@@ -512,11 +610,19 @@ impl<S: Write> Write for OneByte<S> {
     }
 }
 
-impl<S: Read + Write> Io for OneByte<S> {
+impl<S: Io> Io for OneByte<S> {
+    fn poll_read(&mut self) -> Async<()> {
+        self.inner.poll_read()
+    }
+
+    fn poll_write(&mut self) -> Async<()> {
+        self.inner.poll_write()
+    }
 }
 
 #[test]
 fn one_byte_at_a_time() {
+    const AMT: u64 = 1024;
     drop(env_logger::init());
     let mut l = t!(Core::new());
 

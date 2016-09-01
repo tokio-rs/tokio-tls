@@ -26,7 +26,20 @@ use futures::{Poll, Future, Async};
 use tokio_core::io::Io;
 
 cfg_if! {
-    if #[cfg(any(feature = "force-openssl",
+    if #[cfg(feature = "rustls")] {
+        mod rustls;
+        use self::rustls as imp;
+
+        /// Backend-specific extension traits.
+        pub mod backend {
+
+            /// Extension traits specific to the OpenSSL backend.
+            pub mod rustls {
+                pub use rustls::ServerContextExt;
+                pub use rustls::ClientContextExt;
+            }
+        }
+    } else if #[cfg(any(feature = "force-openssl",
                  all(not(target_os = "macos"),
                      not(target_os = "windows"))))] {
         mod openssl;
