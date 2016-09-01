@@ -10,6 +10,7 @@ before_script:
 script:
   - cargo build
   - cargo test
+  - cargo test --features force-openssl
   - cargo doc --no-deps
 after_success:
   - travis-cargo --only nightly doc-upload
