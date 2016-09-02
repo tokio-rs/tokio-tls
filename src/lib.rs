@@ -12,6 +12,7 @@
 
 #![deny(missing_docs)]
 
+#[macro_use]
 extern crate futures;
 #[macro_use]
 extern crate cfg_if;
@@ -184,7 +185,8 @@ impl<S> Future for ClientHandshake<S>
     type Error = io::Error;
 
     fn poll(&mut self) -> Poll<TlsStream<S>, io::Error> {
-        self.inner.poll().map(|s| TlsStream { inner: s })
+        let inner = try_ready!(self.inner.poll());
+        Ok(TlsStream { inner: inner }.into())
     }
 }
 
@@ -195,7 +197,8 @@ impl<S> Future for ServerHandshake<S>
     type Error = io::Error;
 
     fn poll(&mut self) -> Poll<TlsStream<S>, io::Error> {
-        self.inner.poll().map(|s| TlsStream { inner: s })
+        let inner = try_ready!(self.inner.poll());
+        Ok(TlsStream { inner: inner }.into())
     }
 }
 

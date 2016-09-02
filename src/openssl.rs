@@ -10,7 +10,7 @@ use self::openssl::ssl::{SSL_OP_NO_SSLV2, SSL_OP_NO_SSLV3, SSL_OP_NO_COMPRESSION
 use self::openssl::ssl::{self, IntoSsl, SSL_VERIFY_PEER};
 use self::openssl::x509::X509;
 use self::openssl_verify::verify_callback;
-use futures::{Poll, Future};
+use futures::{Poll, Future, Async};
 
 pub struct ServerContext {
     inner: ssl::SslContext,
@@ -139,24 +139,24 @@ impl<S> Future for Handshake<S>
     fn poll(&mut self) -> Poll<TlsStream<S>, io::Error> {
         debug!("let's see how the handshake went");
         let stream = match mem::replace(self, Handshake::Empty) {
-            Handshake::Error(e) => return Poll::Err(e),
+            Handshake::Error(e) => return Err(e),
             Handshake::Empty => panic!("can't poll handshake twice"),
-            Handshake::Stream(s) => return Poll::Ok(TlsStream::new(s)),
+            Handshake::Stream(s) => return Ok(Async::Ready(TlsStream::new(s))),
             Handshake::Interrupted(s) => s,
         };
 
         // TODO: dedup with Handshake::new
         debug!("openssl handshake again");
         match stream.handshake() {
-            Ok(s) => Poll::Ok(TlsStream::new(s)),
+            Ok(s) => Ok(Async::Ready(TlsStream::new(s))),
             Err(ssl::HandshakeError::Failure(e)) => {
                 debug!("openssl handshake failure: {:?}", e);
-                Poll::Err(Error::new(ErrorKind::Other, e))
+                Err(Error::new(ErrorKind::Other, e))
             }
             Err(ssl::HandshakeError::Interrupted(s)) => {
                 debug!("handshake not completed");
                 *self = Handshake::Interrupted(s);
-                Poll::NotReady
+                Ok(Async::NotReady)
             }
         }
     }

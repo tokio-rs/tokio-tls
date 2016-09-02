@@ -8,7 +8,7 @@ use self::security_framework::certificate::SecCertificate;
 use self::security_framework::identity::SecIdentity;
 use self::security_framework::secure_transport as st;
 use self::security_framework::trust::TrustResult;
-use futures::{Poll, Future};
+use futures::{Async, Poll, Future};
 
 pub struct TlsStream<S> {
     stream: st::SslStream<S>,
@@ -164,29 +164,27 @@ impl<S> Future for Handshake<S>
 
     fn poll(&mut self) -> Poll<TlsStream<S>, io::Error> {
         let (mut stream, certs) = match mem::replace(self, Handshake::Empty) {
-            Handshake::Error(e) => return Poll::Err(e),
+            Handshake::Error(e) => return Err(e),
             Handshake::Empty => panic!("can't poll handshake twice"),
-            Handshake::Stream(s) => return Poll::Ok(TlsStream::new(s)),
+            Handshake::Stream(s) => return Ok(TlsStream::new(s).into()),
             Handshake::Interrupted(s, certs) => (s, certs),
         };
 
         loop {
-            if let Err(e) = self.validate_certs(&stream, &certs) {
-                return Poll::Err(e)
-            }
+            try!(self.validate_certs(&stream, &certs));
 
             // TODO: dedup with Handshake::new
             stream = match stream.handshake() {
-                Ok(s) => return Poll::Ok(TlsStream::new(s)),
+                Ok(s) => return Ok(TlsStream::new(s).into()),
                 Err(st::HandshakeError::Failure(e)) => {
-                    return Poll::Err(Error::new(ErrorKind::Other, e))
+                    return Err(Error::new(ErrorKind::Other, e))
                 }
                 Err(st::HandshakeError::Interrupted(s)) => s,
             };
 
             if stream.would_block() {
                 *self = Handshake::Interrupted(stream, certs);
-                return Poll::NotReady
+                return Ok(Async::NotReady)
             }
         }
     }

@@ -6,7 +6,7 @@ use std::mem;
 use self::schannel::tls_stream::{self, HandshakeError};
 use self::schannel::tls_stream::MidHandshakeTlsStream;
 use self::schannel::schannel_cred::{self, Direction};
-use futures::{Poll, Future};
+use futures::{Async, Poll, Future};
 
 pub struct ServerContext {
     cred: schannel_cred::Builder,
@@ -110,19 +110,19 @@ impl<S> Future for Handshake<S>
 
     fn poll(&mut self) -> Poll<TlsStream<S>, io::Error> {
         let stream = match mem::replace(self, Handshake::Empty) {
-            Handshake::Error(e) => return Poll::Err(e),
+            Handshake::Error(e) => return Err(e),
             Handshake::Empty => panic!("can't poll handshake twice"),
-            Handshake::Stream(s) => return Poll::Ok(TlsStream::new(s)),
+            Handshake::Stream(s) => return Ok(TlsStream::new(s).into()),
             Handshake::Interrupted(s) => s,
         };
 
         // TODO: dedup with Handshake::new
         match stream.handshake() {
-            Ok(s) => Poll::Ok(TlsStream::new(s)),
-            Err(HandshakeError::Failure(e)) => Poll::Err(e),
+            Ok(s) => Ok(TlsStream::new(s).into()),
+            Err(HandshakeError::Failure(e)) => Err(e),
             Err(HandshakeError::Interrupted(s)) => {
                 *self = Handshake::Interrupted(s);
-                Poll::NotReady
+                Ok(Async::NotReady)
             }
         }
     }
