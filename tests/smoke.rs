@@ -10,7 +10,9 @@ use std::io::{self, Read, Write};
 
 use futures::Future;
 use futures::stream::Stream;
-use tokio_core::io::{read_to_end, copy};
+use tokio_core::io::{read_to_end, copy, Io};
+use tokio_core::reactor::Core;
+use tokio_core::net::{TcpListener, TcpStream};
 use tokio_tls::{ServerContext, ClientContext};
 
 macro_rules! t {
@@ -427,11 +429,10 @@ const AMT: u64 = 128 * 1024;
 #[test]
 fn client_to_server() {
     drop(env_logger::init());
-    let mut l = t!(tokio_core::Loop::new());
+    let mut l = t!(Core::new());
 
     // Create a server listening on a port, then figure out what that port is
-    let srv = l.handle().tcp_listen(&"127.0.0.1:0".parse().unwrap());
-    let srv = t!(l.run(srv));
+    let srv = t!(TcpListener::bind(&t!("127.0.0.1:0".parse()), &l.handle()));
     let addr = t!(srv.local_addr());
 
     // Create a future to accept one socket, connect the ssl stream, and then
@@ -447,7 +448,7 @@ fn client_to_server() {
 
     // Create a future to connect to our server, connect the ssl stream, and
     // then write a bunch of data to it.
-    let client = l.handle().tcp_connect(&addr);
+    let client = TcpStream::connect(&addr, &l.handle());
     let sent = client.and_then(move |socket| {
         t!(client_cx()).handshake("localhost", socket)
     }).and_then(|socket| {
@@ -463,11 +464,10 @@ fn client_to_server() {
 #[test]
 fn server_to_client() {
     drop(env_logger::init());
-    let mut l = t!(tokio_core::Loop::new());
+    let mut l = t!(Core::new());
 
     // Create a server listening on a port, then figure out what that port is
-    let srv = l.handle().tcp_listen(&"127.0.0.1:0".parse().unwrap());
-    let srv = t!(l.run(srv));
+    let srv = t!(TcpListener::bind(&t!("127.0.0.1:0".parse()), &l.handle()));
     let addr = t!(srv.local_addr());
 
     let socket = srv.incoming().take(1).collect();
@@ -479,7 +479,7 @@ fn server_to_client() {
         copy(io::repeat(9).take(AMT), socket)
     });
 
-    let client = l.handle().tcp_connect(&addr);
+    let client = TcpStream::connect(&addr, &l.handle());
     let received = client.and_then(move |socket| {
         t!(client_cx()).handshake("localhost", socket)
     }).and_then(|socket| {
@@ -512,13 +512,15 @@ impl<S: Write> Write for OneByte<S> {
     }
 }
 
+impl<S: Read + Write> Io for OneByte<S> {
+}
+
 #[test]
 fn one_byte_at_a_time() {
     drop(env_logger::init());
-    let mut l = t!(tokio_core::Loop::new());
+    let mut l = t!(Core::new());
 
-    let srv = l.handle().tcp_listen(&"127.0.0.1:0".parse().unwrap());
-    let srv = t!(l.run(srv));
+    let srv = t!(TcpListener::bind(&t!("127.0.0.1:0".parse()), &l.handle()));
     let addr = t!(srv.local_addr());
 
     let socket = srv.incoming().take(1).collect();
@@ -530,7 +532,7 @@ fn one_byte_at_a_time() {
         copy(io::repeat(9).take(AMT), socket)
     });
 
-    let client = l.handle().tcp_connect(&addr);
+    let client = TcpStream::connect(&addr, &l.handle());
     let received = client.and_then(move |socket| {
         t!(client_cx()).handshake("localhost", OneByte { inner: socket })
     }).and_then(|socket| {

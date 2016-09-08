@@ -18,10 +18,12 @@ extern crate futures;
 extern crate cfg_if;
 #[macro_use]
 extern crate log;
+extern crate tokio_core;
 
 use std::io::{self, Read, Write};
 
-use futures::{Poll, Future};
+use futures::{Poll, Future, Async};
+use tokio_core::io::Io;
 
 cfg_if! {
     if #[cfg(any(feature = "force-openssl",
@@ -154,7 +156,7 @@ impl ClientContext {
                         domain: &str,
                         stream: S)
                         -> ClientHandshake<S>
-        where S: Read + Write,
+        where S: Io,
     {
         ClientHandshake { inner: self.inner.handshake(domain, stream) }
     }
@@ -172,15 +174,13 @@ impl ServerContext {
     /// The given I/O stream should be an accepted client of this server which
     /// is ready to negotiate the TLS connection.
     pub fn handshake<S>(self, stream: S) -> ServerHandshake<S>
-        where S: Read + Write,
+        where S: Io,
     {
         ServerHandshake { inner: self.inner.handshake(stream) }
     }
 }
 
-impl<S> Future for ClientHandshake<S>
-    where S: Read + Write,
-{
+impl<S: Io> Future for ClientHandshake<S> {
     type Item = TlsStream<S>;
     type Error = io::Error;
 
@@ -190,9 +190,7 @@ impl<S> Future for ClientHandshake<S>
     }
 }
 
-impl<S> Future for ServerHandshake<S>
-    where S: Read + Write,
-{
+impl<S: Io> Future for ServerHandshake<S> {
     type Item = TlsStream<S>;
     type Error = io::Error;
 
@@ -202,22 +200,28 @@ impl<S> Future for ServerHandshake<S>
     }
 }
 
-impl<S> Read for TlsStream<S>
-    where S: Read + Write,
-{
+impl<S: Io> Read for TlsStream<S> {
     fn read(&mut self, buf: &mut [u8]) -> io::Result<usize> {
         self.inner.read(buf)
     }
 }
 
-impl<S> Write for TlsStream<S>
-    where S: Read + Write,
-{
+impl<S: Io> Write for TlsStream<S> {
     fn write(&mut self, buf: &[u8]) -> io::Result<usize> {
         self.inner.write(buf)
     }
 
     fn flush(&mut self) -> io::Result<()> {
         self.inner.flush()
+    }
+}
+
+impl<S: Io> Io for TlsStream<S> {
+    fn poll_read(&mut self) -> Async<()> {
+        self.inner.poll_read()
+    }
+
+    fn poll_write(&mut self) -> Async<()> {
+        self.inner.poll_write()
     }
 }

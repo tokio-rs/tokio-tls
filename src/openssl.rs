@@ -11,6 +11,7 @@ use self::openssl::ssl::{self, IntoSsl, SSL_VERIFY_PEER};
 use self::openssl::x509::X509;
 use self::openssl_verify::verify_callback;
 use futures::{Poll, Future, Async};
+use tokio_core::io::Io;
 
 pub struct ServerContext {
     inner: ssl::SslContext,
@@ -36,7 +37,7 @@ fn cx_new() -> io::Result<ssl::SslContext> {
 
 impl ServerContext {
     pub fn handshake<S>(self, stream: S) -> ServerHandshake<S>
-        where S: Read + Write,
+        where S: Io,
     {
         let res = ssl::SslStream::accept(&self.inner, stream);
         debug!("server handshake");
@@ -60,7 +61,7 @@ impl ClientContext {
     pub fn handshake<S>(self,
                         domain: &str,
                         stream: S) -> ClientHandshake<S>
-        where S: Read + Write,
+        where S: Io,
     {
         // see rust-native-tls for the specifics here
         debug!("client handshake with {:?}", domain);
@@ -108,9 +109,7 @@ impl<S> Handshake<S> {
     }
 }
 
-impl<S> Future for ClientHandshake<S>
-    where S: Read + Write,
-{
+impl<S: Io> Future for ClientHandshake<S> {
     type Item = TlsStream<S>;
     type Error = io::Error;
 
@@ -119,9 +118,7 @@ impl<S> Future for ClientHandshake<S>
     }
 }
 
-impl<S> Future for ServerHandshake<S>
-    where S: Read + Write,
-{
+impl<S: Io> Future for ServerHandshake<S> {
     type Item = TlsStream<S>;
     type Error = io::Error;
 
@@ -130,9 +127,7 @@ impl<S> Future for ServerHandshake<S>
     }
 }
 
-impl<S> Future for Handshake<S>
-    where S: Read + Write,
-{
+impl<S: Io> Future for Handshake<S> {
     type Item = TlsStream<S>;
     type Error = io::Error;
 
@@ -186,13 +181,13 @@ impl<S> TlsStream<S> {
     }
 }
 
-impl<S: Read + Write> Read for TlsStream<S> {
+impl<S: Io> Read for TlsStream<S> {
     fn read(&mut self, buf: &mut [u8]) -> io::Result<usize> {
         self.inner.ssl_read(buf).map_err(translate)
     }
 }
 
-impl<S: Read + Write> Write for TlsStream<S> {
+impl<S: Io> Write for TlsStream<S> {
     fn write(&mut self, buf: &[u8]) -> io::Result<usize> {
         self.inner.ssl_write(buf).map_err(translate)
     }
@@ -200,6 +195,10 @@ impl<S: Read + Write> Write for TlsStream<S> {
     fn flush(&mut self) -> io::Result<()> {
         self.inner.flush()
     }
+}
+
+impl<S: Io> Io for TlsStream<S> {
+    // TODO: more fine-tuned poll_read/poll_write
 }
 
 /// Extension trait for servers backed by OpenSSL.

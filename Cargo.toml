@@ -16,6 +16,7 @@ for nonblocking I/O streams.
 cfg-if = "0.1"
 futures = { git = "https://github.com/alexcrichton/futures-rs" }
 log = "0.3"
+tokio-core = { git = "https://github.com/tokio-rs/tokio-core" }
 
 # Optional dependency that can be enabled with the `force-openssl` feature
 openssl = { version = "0.8", optional = true }
@@ -38,7 +39,6 @@ kernel32-sys = "0.2"
 winapi = "0.2"
 
 [dev-dependencies]
-tokio-core = { git = "https://github.com/tokio-rs/tokio-core" }
 env_logger = "0.3"
 
 [features]

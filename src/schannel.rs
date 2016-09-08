@@ -7,6 +7,7 @@ use self::schannel::tls_stream::{self, HandshakeError};
 use self::schannel::tls_stream::MidHandshakeTlsStream;
 use self::schannel::schannel_cred::{self, Direction};
 use futures::{Async, Poll, Future};
+use tokio_core::io::Io;
 
 pub struct ServerContext {
     cred: schannel_cred::Builder,
@@ -20,7 +21,7 @@ pub struct ClientContext {
 
 impl ServerContext {
     pub fn handshake<S>(mut self, stream: S) -> ServerHandshake<S>
-        where S: Read + Write,
+        where S: Io,
     {
         let res = self.cred.acquire(Direction::Inbound);
         let res = res.map_err(HandshakeError::Failure);
@@ -43,7 +44,7 @@ impl ClientContext {
     pub fn handshake<S>(mut self,
                         domain: &str,
                         stream: S) -> ClientHandshake<S>
-        where S: Read + Write,
+        where S: Io,
     {
         let res = self.cred.acquire(Direction::Outbound);
         let res = res.map_err(HandshakeError::Failure);
@@ -69,9 +70,7 @@ enum Handshake<S> {
     Empty,
 }
 
-impl<S> Future for ClientHandshake<S>
-    where S: Read + Write,
-{
+impl<S: Io> Future for ClientHandshake<S> {
     type Item = TlsStream<S>;
     type Error = io::Error;
 
@@ -80,9 +79,7 @@ impl<S> Future for ClientHandshake<S>
     }
 }
 
-impl<S> Future for ServerHandshake<S>
-    where S: Read + Write,
-{
+impl<S: Io> Future for ServerHandshake<S> {
     type Item = TlsStream<S>;
     type Error = io::Error;
 
@@ -102,9 +99,7 @@ impl<S> Handshake<S> {
     }
 }
 
-impl<S> Future for Handshake<S>
-    where S: Read + Write,
-{
+impl<S: Io> Future for Handshake<S> {
     type Item = TlsStream<S>;
     type Error = io::Error;
 
@@ -138,13 +133,13 @@ impl<S> TlsStream<S> {
     }
 }
 
-impl<S: Read + Write> Read for TlsStream<S> {
+impl<S: Io> Read for TlsStream<S> {
     fn read(&mut self, buf: &mut [u8]) -> io::Result<usize> {
         self.inner.read(buf)
     }
 }
 
-impl<S: Read + Write> Write for TlsStream<S> {
+impl<S: Io> Write for TlsStream<S> {
     fn write(&mut self, buf: &[u8]) -> io::Result<usize> {
         self.inner.write(buf)
     }
@@ -152,6 +147,10 @@ impl<S: Read + Write> Write for TlsStream<S> {
     fn flush(&mut self) -> io::Result<()> {
         self.inner.flush()
     }
+}
+
+impl<S: Io> Io for TlsStream<S> {
+    // TODO: more fine-tuned poll_read/poll_write
 }
 
 /// Extension trait for servers backed by SChannel.

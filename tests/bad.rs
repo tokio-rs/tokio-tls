@@ -11,6 +11,8 @@ use std::net::ToSocketAddrs;
 
 use futures::Future;
 use tokio_tls::ClientContext;
+use tokio_core::reactor::Core;
+use tokio_core::net::TcpStream;
 
 macro_rules! t {
     ($e:expr) => (match $e {
@@ -94,8 +96,8 @@ fn get_host(host: &'static str) -> Error {
     let addr = format!("{}:443", host);
     let addr = t!(addr.to_socket_addrs()).next().unwrap();
 
-    let mut l = t!(tokio_core::Loop::new());
-    let client = l.handle().tcp_connect(&addr);
+    let mut l = t!(Core::new());
+    let client = TcpStream::connect(&addr, &l.handle());
     let data = client.and_then(move |socket| {
         t!(ClientContext::new()).handshake(host, socket)
     });
