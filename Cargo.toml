@@ -50,3 +50,6 @@ untrusted = "0.3"
 [features]
 force-openssl = ["openssl", "openssl-verify"]
 force-rustls = ["rustls", "webpki-roots"]
+
+# Is there a better way of doing this?
+alpn = ["force-openssl", "openssl/tlsv1_2", "openssl/alpn"]
