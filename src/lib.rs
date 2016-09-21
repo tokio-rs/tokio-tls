@@ -37,6 +37,7 @@ cfg_if! {
             pub mod rustls {
                 pub use rustls::ServerContextExt;
                 pub use rustls::ClientContextExt;
+                pub use rustls::TlsStreamExt;
             }
         }
     } else if #[cfg(any(feature = "force-openssl",
@@ -52,6 +53,7 @@ cfg_if! {
             pub mod openssl {
                 pub use openssl::ServerContextExt;
                 pub use openssl::ClientContextExt;
+                pub use openssl::TlsStreamExt;
             }
         }
     } else if #[cfg(target_os = "macos")] {
@@ -65,6 +67,7 @@ cfg_if! {
             pub mod secure_transport {
                 pub use secure_transport::ServerContextExt;
                 pub use secure_transport::ClientContextExt;
+                pub use secure_transport::TlsStreamExt;
             }
         }
     } else {
@@ -78,6 +81,7 @@ cfg_if! {
             pub mod schannel {
                 pub use schannel::ServerContextExt;
                 pub use schannel::ClientContextExt;
+                pub use schannel::TlsStreamExt;
             }
         }
     }
