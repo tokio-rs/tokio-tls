@@ -8,6 +8,7 @@ extern crate cfg_if;
 
 use std::io::Error;
 use std::net::ToSocketAddrs;
+use std::str;
 
 use futures::Future;
 use tokio_core::io::{flush, read_to_end, write_all};
@@ -89,8 +90,12 @@ fn fetch_google() {
     });
 
     let (_, data) = t!(l.run(data));
-    assert!(data.starts_with(b"HTTP/1.0 200 OK"));
-    assert!(data.ends_with(b"</html>"));
+
+    // any response code is fine
+    assert!(data.starts_with(b"HTTP/1.0 "));
+
+    let data = str::from_utf8(&data).unwrap().trim_right();
+    assert!(data.ends_with("</html>") || data.ends_with("</HTML>"));
 }
 
 // see comment in bad.rs for ignore reason
