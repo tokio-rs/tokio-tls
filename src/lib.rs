@@ -92,7 +92,7 @@ cfg_if! {
 /// `new` constructor.
 ///
 /// For some examples of how to create a context, though, you can take a look at
-/// the test suite of `futures-tls`.
+/// the test suite of `tokio-tls`.
 pub struct ServerContext {
     inner: imp::ServerContext,
 }
