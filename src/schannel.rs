@@ -123,6 +123,7 @@ impl<S: Io> Future for Handshake<S> {
     }
 }
 
+#[derive(Debug)]
 pub struct TlsStream<S> {
     inner: tls_stream::TlsStream<S>,
 }

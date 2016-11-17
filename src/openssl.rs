@@ -169,6 +169,7 @@ fn translate(err: openssl::ssl::Error) -> Error {
     }
 }
 
+#[derive(Debug)]
 pub struct TlsStream<S> {
     inner: ssl::SslStream<S>,
 }

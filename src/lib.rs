@@ -116,6 +116,7 @@ pub struct ClientContext {
 /// and both the server and the client are ready for receiving and sending
 /// data. Bytes read from a `TlsStream` are decrypted from `S` and bytes written
 /// to a `TlsStream` are encrypted when passing through to `S`.
+#[derive(Debug)]
 pub struct TlsStream<S> {
     inner: imp::TlsStream<S>,
 }

@@ -11,6 +11,7 @@ use self::security_framework::trust::TrustResult;
 use futures::{Async, Poll, Future};
 use tokio_core::io::Io;
 
+#[derive(Debug)]
 pub struct TlsStream<S> {
     stream: st::SslStream<S>,
 }

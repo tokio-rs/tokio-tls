@@ -124,6 +124,7 @@ impl<T> Future for Handshake<T>
     }
 }
 
+#[derive(Debug)]
 pub struct TlsStream<S> {
     inner: S,
     eof: bool,
