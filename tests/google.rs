@@ -42,7 +42,7 @@ cfg_if! {
                 ref e => panic!("not an ssl eror: {:?}", e),
             };
             assert!(errs.errors().iter().any(|e| {
-                e.reason() == "certificate verify failed"
+                e.reason() == Some("certificate verify failed")
             }), "bad errors: {:?}", errs);
         }
     } else if #[cfg(target_os = "macos")] {
