@@ -130,9 +130,9 @@ cfg_if! {
         use std::env;
         use std::sync::{Once, ONCE_INIT};
 
-        use openssl::crypto::hash::Type;
-        use openssl::crypto::pkey::PKey;
-        use openssl::crypto::rsa::RSA;
+        use openssl::hash::MessageDigest;
+        use openssl::pkey::PKey;
+        use openssl::rsa::Rsa;
         use openssl::x509::{X509Generator, X509};
 
         use tokio_tls::backend::openssl::ServerContextExt;
@@ -156,7 +156,7 @@ cfg_if! {
                 t!(t!(File::create(&path)).write_all(&pem));
             });
             let ssl = cx.ssl_context_mut();
-            t!(ssl.set_CA_file(&path));
+            t!(ssl.set_ca_file(&path));
         }
 
         // Generates a new key on the fly to be used for the entire suite of
@@ -168,12 +168,12 @@ cfg_if! {
 
             unsafe {
                 INIT.call_once(|| {
-                    let rsa = RSA::generate(1024).unwrap();
+                    let rsa = Rsa::generate(1024).unwrap();
                     let pkey = PKey::from_rsa(rsa).unwrap();
                     let gen = X509Generator::new()
                                 .set_valid_period(1)
                                 .add_name("CN".to_owned(), "localhost".to_owned())
-                                .set_sign_hash(Type::SHA256);
+                                .set_sign_hash(MessageDigest::sha256());
                     let cert = gen.sign(&pkey).unwrap();
 
                     CERT = Box::into_raw(Box::new(cert));

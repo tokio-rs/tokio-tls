@@ -1,81 +1,48 @@
 extern crate openssl;
-extern crate openssl_verify;
 extern crate futures;
 
 use std::io::{self, Read, Write, Error, ErrorKind};
 use std::mem;
 
-use self::openssl::crypto::pkey::PKey;
-use self::openssl::ssl::{SSL_OP_NO_SSLV2, SSL_OP_NO_SSLV3, SSL_OP_NO_COMPRESSION};
-use self::openssl::ssl::{self, IntoSsl, SSL_VERIFY_PEER};
-use self::openssl::x509::X509;
-use self::openssl_verify::verify_callback;
+use self::openssl::pkey::PKeyRef;
+use self::openssl::ssl::{self, SslMethod};
+use self::openssl::x509::X509Ref;
 use futures::{Poll, Future, Async};
 use tokio_core::io::Io;
 
 pub struct ServerContext {
-    inner: ssl::SslContext,
+    inner: ssl::SslAcceptorBuilder,
 }
 
 pub struct ClientContext {
-    inner: ssl::SslContext,
-}
-
-fn cx_new() -> io::Result<ssl::SslContext> {
-    let mut cx = try!(ssl::SslContext::new(ssl::SslMethod::Sslv23)
-                          .map_err(translate_ssl));
-
-    // lifted from rust-native-tls
-    cx.set_options(SSL_OP_NO_SSLV2 |
-                   SSL_OP_NO_SSLV3 |
-                   SSL_OP_NO_COMPRESSION);
-    let list = "ALL!EXPORT!EXPORT40!EXPORT56!aNULL!LOW!RC4@STRENGTH";
-    try!(cx.set_cipher_list(list).map_err(translate_ssl));
-
-    Ok(cx)
+    inner: ssl::SslConnectorBuilder,
 }
 
 impl ServerContext {
     pub fn handshake<S>(self, stream: S) -> ServerHandshake<S>
         where S: Io,
     {
-        let res = ssl::SslStream::accept(&self.inner, stream);
+        let secure_stream = self.inner.build().accept(stream);
         debug!("server handshake");
         ServerHandshake {
-            inner: Handshake::new(res),
+            inner: Handshake::new(secure_stream),
         }
     }
 }
 
-fn stack2handshake<S>(err: openssl::error::ErrorStack) -> ssl::HandshakeError<S> {
-    ssl::HandshakeError::Failure(ssl::error::Error::Ssl(err))
-}
-
 impl ClientContext {
     pub fn new() -> io::Result<ClientContext> {
-        let mut cx = try!(cx_new());
-        try!(cx.set_default_verify_paths().map_err(translate_ssl));
+        let cx = try!(ssl::SslConnectorBuilder::new(SslMethod::tls()));
         Ok(ClientContext { inner: cx })
     }
 
-    pub fn handshake<S>(self,
-                        domain: &str,
-                        stream: S) -> ClientHandshake<S>
+    pub fn handshake<S>(self, domain: &str, stream: S) -> ClientHandshake<S>
         where S: Io,
     {
         // see rust-native-tls for the specifics here
         debug!("client handshake with {:?}", domain);
-        let res = self.inner.into_ssl()
-                      .map_err(stack2handshake)
-                      .and_then(|mut ssl| {
-            try!(ssl.set_hostname(domain).map_err(stack2handshake));
-            let domain = domain.to_owned();
-            ssl.set_verify_callback(SSL_VERIFY_PEER, move |p, x| {
-                verify_callback(&domain, p, x)
-            });
-            ssl::SslStream::connect(ssl, stream)
-        });
-        ClientHandshake { inner: Handshake::new(res) }
+        let secure_stream = self.inner.build().connect(domain, stream);
+        ClientHandshake { inner: Handshake::new(secure_stream) }
     }
 }
 
@@ -99,8 +66,11 @@ impl<S> Handshake<S> {
            -> Handshake<S> {
         match res {
             Ok(s) => Handshake::Stream(s),
+            Err(ssl::HandshakeError::SetupFailure(stack)) => {
+                Handshake::Error(translate_ssl(stack))
+            }
             Err(ssl::HandshakeError::Failure(e)) => {
-                Handshake::Error(Error::new(ErrorKind::Other, e))
+                Handshake::Error(Error::new(ErrorKind::Other, e.into_error()))
             }
             Err(ssl::HandshakeError::Interrupted(s)) => {
                 Handshake::Interrupted(s)
@@ -144,9 +114,11 @@ impl<S: Io> Future for Handshake<S> {
         debug!("openssl handshake again");
         match stream.handshake() {
             Ok(s) => Ok(Async::Ready(TlsStream::new(s))),
+            Err(ssl::HandshakeError::SetupFailure(stack)) =>
+                Err(translate_ssl(stack)),
             Err(ssl::HandshakeError::Failure(e)) => {
-                debug!("openssl handshake failure: {:?}", e);
-                Err(Error::new(ErrorKind::Other, e))
+                debug!("openssl handshake failure: {}", e.error());
+                Err(Error::new(ErrorKind::Other, e.into_error()))
             }
             Err(ssl::HandshakeError::Interrupted(s)) => {
                 debug!("handshake not completed");
@@ -208,27 +180,30 @@ pub trait ServerContextExt: Sized {
     /// This will create a new server connection which will send `cert` to
     /// clients and use `key` as the corresponding private key to encrypt and
     /// sign communications.
-    fn new(cert: &X509, key: &PKey) -> io::Result<Self>;
+    fn new(cert: &X509Ref, key: &PKeyRef) -> io::Result<Self>;
 
     /// Gets a mutable reference to the underlying SSL context, allowing further
     /// configuration.
     ///
     /// The SSL context here will eventually get used to initiate the server
     /// connection.
-    fn ssl_context_mut(&mut self) -> &mut ssl::SslContext;
+    fn ssl_context_mut(&mut self) -> &mut ssl::SslContextBuilder;
 }
 
 impl ServerContextExt for ::ServerContext {
-    fn new(cert: &X509, key: &PKey) -> io::Result<::ServerContext> {
-        let mut cx = try!(cx_new());
-        try!(cx.set_certificate(cert).map_err(translate_ssl));
-        try!(cx.set_private_key(key).map_err(translate_ssl));
-        try!(cx.check_private_key().map_err(translate_ssl));
+    fn new(cert: &X509Ref, key: &PKeyRef) -> io::Result<::ServerContext> {
+        let iter = ::std::iter::empty::<X509Ref>();
+        let cx =
+            try!(ssl::SslAcceptorBuilder::mozilla_intermediate(SslMethod::tls(),
+                                                               key,
+                                                               cert,
+                                                               iter)
+                 .map_err(|e| Error::new(ErrorKind::Other, e)));
         Ok(::ServerContext { inner: ServerContext { inner: cx } })
     }
 
-    fn ssl_context_mut(&mut self) -> &mut ssl::SslContext {
-        &mut self.inner.inner
+    fn ssl_context_mut(&mut self) -> &mut ssl::SslContextBuilder {
+        self.inner.inner.builder_mut()
     }
 }
 
@@ -240,12 +215,12 @@ pub trait ClientContextExt {
     /// The SSL context here will eventually get used to initiate the client
     /// connection, and it will otherwise be configured to validate the hostname
     /// given to `handshake` by default.
-    fn ssl_context_mut(&mut self) -> &mut ssl::SslContext;
+    fn ssl_context_mut(&mut self) -> &mut ssl::SslContextBuilder;
 }
 
 impl ClientContextExt for ::ClientContext {
-    fn ssl_context_mut(&mut self) -> &mut ssl::SslContext {
-        &mut self.inner.inner
+    fn ssl_context_mut(&mut self) -> &mut ssl::SslContextBuilder {
+        self.inner.inner.builder_mut()
     }
 }
 
@@ -253,11 +228,11 @@ impl ClientContextExt for ::ClientContext {
 pub trait TlsStreamExt {
     /// Gets a shared reference to the underlying SSL context, allowing further
     /// configuration and/or inspection of the SSL/TLS state.
-    fn ssl_context(&self) -> &ssl::Ssl;
+    fn ssl_context(&self) -> &ssl::SslRef;
 }
 
 impl<S> TlsStreamExt for ::TlsStream<S> {
-    fn ssl_context(&self) -> &ssl::Ssl {
+    fn ssl_context(&self) -> &ssl::SslRef {
         self.inner.inner.ssl()
     }
 }
