@@ -22,8 +22,8 @@ tokio-core = "0.1"
 openssl = { version = "0.9", optional = true }
 
 # Optional dependency to use `rustls` as a backend, enabled with `force-rustls`
-rustls = { version = "0.1.2", optional = true }
-webpki-roots = { version = "0.2", optional = true }
+rustls = { version = "0.5", optional = true }
+webpki-roots = { version = "0.5", optional = true }
 
 [target.'cfg(all(unix, not(target_os = "macos")))'.dependencies]
 openssl = "0.9"
