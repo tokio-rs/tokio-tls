@@ -21,6 +21,7 @@ extern crate log;
 extern crate tokio_core;
 
 use std::io::{self, Read, Write};
+use std::fmt::{Debug};
 
 use futures::{Poll, Future, Async};
 use tokio_core::io::Io;
@@ -236,5 +237,13 @@ impl<S: Io> Io for TlsStream<S> {
 
     fn poll_write(&mut self) -> Async<()> {
         self.inner.poll_write()
+    }
+}
+
+impl<S: Io + std::fmt::Debug> Debug for TlsStream<S>
+    where imp::TlsStream<S>: std::fmt::Debug,
+{
+    fn fmt(&self, fmt: &mut std::fmt::Formatter) -> std::result::Result<(), std::fmt::Error> {
+        self.inner.fmt(fmt)
     }
 }

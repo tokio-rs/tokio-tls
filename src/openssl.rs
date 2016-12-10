@@ -4,6 +4,7 @@ extern crate futures;
 
 use std::io::{self, Read, Write, Error, ErrorKind};
 use std::mem;
+use std::fmt::{self, Debug};
 
 use self::openssl::crypto::pkey::PKey;
 use self::openssl::ssl::{SSL_OP_NO_SSLV2, SSL_OP_NO_SSLV3, SSL_OP_NO_COMPRESSION};
@@ -199,6 +200,12 @@ impl<S: Io> Write for TlsStream<S> {
 
 impl<S: Io> Io for TlsStream<S> {
     // TODO: more fine-tuned poll_read/poll_write
+}
+
+impl<S: Io + fmt::Debug> Debug for TlsStream<S> {
+    fn fmt(&self, fmt: &mut fmt::Formatter) -> Result<(), fmt::Error> {
+        self.inner.fmt(fmt)
+    }
 }
 
 /// Extension trait for servers backed by OpenSSL.
