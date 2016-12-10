@@ -2,6 +2,7 @@ extern crate futures;
 extern crate rustls;
 extern crate webpki_roots;
 
+use std::fmt;
 use std::io::{self, Read, Write, Error, ErrorKind};
 use std::mem;
 use std::sync::Arc;
@@ -221,6 +222,21 @@ impl<S: Io> Write for TlsStream<S> {
             try!(self.session.write_tls(&mut self.inner));
         }
         Ok(())
+    }
+}
+
+impl<S: Io + fmt::Debug> fmt::Debug for TlsStream<S> {
+    fn fmt(&self, fmt: &mut fmt::Formatter) -> fmt::Result {
+        let wants_read = self.session.wants_read();
+        let wants_write = self.session.wants_write();
+        let is_handshaking = self.session.is_handshaking();
+        fmt.debug_struct("TlsStream")
+            .field("inner", &self.inner)
+            .field("eof", &self.eof)
+            .field("wants_read", &wants_read)
+            .field("wants_write", &wants_write)
+            .field("is_handshaking", &is_handshaking)
+            .finish()
     }
 }
 
