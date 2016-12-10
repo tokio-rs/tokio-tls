@@ -240,7 +240,9 @@ impl<S: Io> Io for TlsStream<S> {
     }
 }
 
-impl<S: Io + std::fmt::Debug> Debug for TlsStream<S> {
+impl<S: Io + std::fmt::Debug> Debug for TlsStream<S>
+    where imp::TlsStream<S>: std::fmt::Debug,
+{
     fn fmt(&self, fmt: &mut std::fmt::Formatter) -> std::result::Result<(), std::fmt::Error> {
         self.inner.fmt(fmt)
     }
