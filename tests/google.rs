@@ -1,19 +1,21 @@
 extern crate env_logger;
 extern crate futures;
+extern crate native_tls;
 extern crate tokio_core;
 extern crate tokio_tls;
 
 #[macro_use]
 extern crate cfg_if;
 
-use std::io::Error;
+use std::io::{self, Error};
 use std::net::ToSocketAddrs;
 
 use futures::Future;
+use native_tls::TlsConnector;
 use tokio_core::io::{flush, read_to_end, write_all};
 use tokio_core::net::TcpStream;
 use tokio_core::reactor::Core;
-use tokio_tls::ClientContext;
+use tokio_tls::TlsConnectorExt;
 
 macro_rules! t {
     ($e:expr) => (match $e {
@@ -31,38 +33,48 @@ cfg_if! {
     } else if #[cfg(any(feature = "force-openssl",
                  all(not(target_os = "macos"),
                      not(target_os = "windows"))))] {
-        extern crate openssl;
+	    extern crate openssl;
 
-        use openssl::ssl as ossl;
+        use openssl::ssl;
+        use native_tls::backend::openssl::ErrorExt;
 
         fn assert_bad_hostname_error(err: &Error) {
             let err = err.get_ref().unwrap();
-            let errs = match *err.downcast_ref::<ossl::Error>().unwrap() {
-                ossl::Error::Ssl(ref v) => v,
-                ref e => panic!("not an ssl eror: {:?}", e),
-            };
-            assert!(errs.errors().iter().any(|e| {
-                e.reason() == "certificate verify failed"
-            }), "bad errors: {:?}", errs);
+            let err = err.downcast_ref::<native_tls::Error>().unwrap();
+			let errs = match *err.openssl_error() {
+				ssl::Error::Ssl(ref v) => v,
+				ref e => panic!("not an ssl eror: {:?}", e),
+			};
+			assert!(errs.errors().iter().any(|e| {
+				e.reason() == Some("certificate verify failed")
+			}), "bad errors: {:?}", errs);
         }
     } else if #[cfg(target_os = "macos")] {
-        extern crate security_framework;
-
-        use security_framework::base::Error as SfError;
+        use native_tls::backend::security_framework::ErrorExt;
 
         fn assert_bad_hostname_error(err: &Error) {
             let err = err.get_ref().unwrap();
-            let err = err.downcast_ref::<SfError>().unwrap();
+            let err = err.downcast_ref::<native_tls::Error>().unwrap();
+            let err = err.security_framework_error();
             assert_eq!(err.message().unwrap(), "invalid certificate chain");
         }
     } else {
         extern crate winapi;
 
+        use native_tls::backend::schannel::ErrorExt;
+
         fn assert_bad_hostname_error(err: &Error) {
+            let err = err.get_ref().unwrap();
+            let err = err.downcast_ref::<native_tls::Error>().unwrap();
+            let err = err.schannel_error();
             let code = err.raw_os_error().unwrap();
             assert_eq!(code as usize, winapi::CERT_E_CN_NO_MATCH as usize);
         }
     }
+}
+
+fn native2io(e: native_tls::Error) -> io::Error {
+    io::Error::new(io::ErrorKind::Other, e)
 }
 
 #[test]
@@ -76,10 +88,13 @@ fn fetch_google() {
     let mut l = t!(Core::new());
     let client = TcpStream::connect(&addr, &l.handle());
 
+
     // Send off the request by first negotiating an SSL handshake, then writing
     // of our request, then flushing, then finally read off the response.
     let data = client.and_then(move |socket| {
-        t!(ClientContext::new()).handshake("google.com", socket)
+        let builder = t!(TlsConnector::builder());
+        let connector = t!(builder.build());
+        connector.connect_async("google.com", socket).map_err(native2io)
     }).and_then(|socket| {
         write_all(socket, b"GET / HTTP/1.0\r\n\r\n")
     }).and_then(|(socket, _)| {
@@ -104,7 +119,9 @@ fn wrong_hostname_error() {
     let mut l = t!(Core::new());
     let client = TcpStream::connect(&addr, &l.handle());
     let data = client.and_then(move |socket| {
-        t!(ClientContext::new()).handshake("rust-lang.org", socket)
+        let builder = t!(TlsConnector::builder());
+        let connector = t!(builder.build());
+        connector.connect_async("rust-lang.org", socket).map_err(native2io)
     });
 
     let res = l.run(data);

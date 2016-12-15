@@ -1,5 +1,6 @@
 extern crate env_logger;
 extern crate futures;
+extern crate native_tls;
 extern crate tokio_core;
 extern crate tokio_tls;
 
@@ -7,19 +8,104 @@ extern crate tokio_tls;
 extern crate cfg_if;
 
 use std::io::{self, Read, Write};
+use std::process::Command;
 
 use futures::{Future, Async};
 use futures::stream::Stream;
 use tokio_core::io::{read_to_end, copy, Io};
 use tokio_core::reactor::Core;
 use tokio_core::net::{TcpListener, TcpStream};
-use tokio_tls::{ServerContext, ClientContext};
+use tokio_tls::{TlsConnectorExt, TlsAcceptorExt};
+use native_tls::{TlsConnector, TlsAcceptor, Pkcs12};
 
 macro_rules! t {
     ($e:expr) => (match $e {
         Ok(e) => e,
         Err(e) => panic!("{} failed with {:?}", stringify!($e), e),
     })
+}
+
+#[allow(dead_code)]
+struct Keys {
+    cert_der: Vec<u8>,
+    pkey_der: Vec<u8>,
+    pkcs12_der: Vec<u8>,
+}
+
+#[allow(dead_code)]
+fn openssl_keys() -> &'static Keys {
+    static INIT: Once = ONCE_INIT;
+    static mut KEYS: *mut Keys = 0 as *mut _;
+
+    INIT.call_once(|| {
+        let path = t!(env::current_exe());
+        let path = path.parent().unwrap();
+        let keyfile = path.join("test.key");
+        let certfile = path.join("test.crt");
+        let config = path.join("openssl.config");
+
+        File::create(&config).unwrap().write_all(b"\
+            [req]\n\
+            distinguished_name=dn\n\
+            [ dn ]\n\
+            CN=localhost\n\
+            [ ext ]\n\
+            basicConstraints=CA:FALSE,pathlen:0\n\
+            subjectAltName = @alt_names
+            [alt_names]
+            DNS.1 = localhost
+        ").unwrap();
+
+        let subj = "/C=US/ST=Denial/L=Sprintfield/O=Dis/CN=localhost";
+        let output = t!(Command::new("openssl")
+                                .arg("req")
+                                .arg("-nodes")
+                                .arg("-x509")
+                                .arg("-newkey").arg("rsa:2048")
+                                .arg("-config").arg(&config)
+                                .arg("-extensions").arg("ext")
+                                .arg("-subj").arg(subj)
+                                .arg("-keyout").arg(&keyfile)
+                                .arg("-out").arg(&certfile)
+                                .arg("-days").arg("1")
+                                .output());
+        assert!(output.status.success());
+
+        let crtout = t!(Command::new("openssl")
+                                .arg("x509")
+                                .arg("-outform").arg("der")
+                                .arg("-in").arg(&certfile)
+                                .output());
+        assert!(crtout.status.success());
+        let keyout = t!(Command::new("openssl")
+                                .arg("rsa")
+                                .arg("-outform").arg("der")
+                                .arg("-in").arg(&keyfile)
+                                .output());
+        assert!(keyout.status.success());
+
+        let pkcs12out = t!(Command::new("openssl")
+                                   .arg("pkcs12")
+                                   .arg("-export")
+                                   .arg("-nodes")
+                                   .arg("-inkey").arg(&keyfile)
+                                   .arg("-in").arg(&certfile)
+                                   .arg("-password").arg("pass:foobar")
+                                   .output());
+        assert!(pkcs12out.status.success());
+
+        let keys = Box::new(Keys {
+            cert_der: crtout.stdout,
+            pkey_der: keyout.stdout,
+            pkcs12_der: pkcs12out.stdout,
+        });
+        unsafe {
+            KEYS = Box::into_raw(keys);
+        }
+    });
+    unsafe {
+        &*KEYS
+    }
 }
 
 cfg_if! {
@@ -65,6 +151,7 @@ cfg_if! {
             static mut KEYS: *mut (Vec<u8>, Vec<u8>) = 0 as *mut _;
 
             INIT.call_once(|| {
+                let (key, cert) = openssl_keys();
                 let path = t!(env::current_exe());
                 let path = path.parent().unwrap();
                 let keyfile = path.join("test.key");
@@ -130,20 +217,18 @@ cfg_if! {
         use std::env;
         use std::sync::{Once, ONCE_INIT};
 
-        use openssl::crypto::hash::Type;
-        use openssl::crypto::pkey::PKey;
-        use openssl::crypto::rsa::RSA;
-        use openssl::x509::{X509Generator, X509};
+        use openssl::x509::X509;
 
-        use tokio_tls::backend::openssl::ServerContextExt;
-        use tokio_tls::backend::openssl::ClientContextExt;
+        use native_tls::backend::openssl::TlsConnectorBuilderExt;
 
-        fn server_cx() -> io::Result<ServerContext> {
-            let (cert, key) = keys();
-            ServerContext::new(cert, key)
-        }
+        fn contexts() -> (TlsAcceptor, TlsConnector) {
+            let keys = openssl_keys();
 
-        fn configure_client(cx: &mut ClientContext) {
+            let pkcs12 = t!(Pkcs12::from_der(&keys.pkcs12_der, "foobar"));
+            let srv = t!(TlsAcceptor::builder(pkcs12));
+
+            let cert = t!(X509::from_der(&keys.cert_der));
+
             // Unfortunately looks like the only way to configure this is
             // `set_CA_file` file on the client side so we have to actually
             // emit the certificate to a file. Do so next to our own binary
@@ -152,135 +237,37 @@ cfg_if! {
             let path = path.parent().unwrap().join("custom.crt");
             static INIT: Once = ONCE_INIT;
             INIT.call_once(|| {
-                let pem = keys().0.to_pem().unwrap();
-                t!(t!(File::create(&path)).write_all(&pem));
+                t!(t!(File::create(&path)).write_all(&t!(cert.to_pem())));
             });
-            let ssl = cx.ssl_context_mut();
-            t!(ssl.set_CA_file(&path));
-        }
+            let mut client = t!(TlsConnector::builder());
+            t!(client.builder_mut()
+                     .builder_mut()
+                     .set_ca_file(&path));
 
-        // Generates a new key on the fly to be used for the entire suite of
-        // tests here.
-        fn keys() -> (&'static X509, &'static PKey) {
-            static INIT: Once = ONCE_INIT;
-            static mut CERT: *mut X509 = 0 as *mut _;
-            static mut KEY: *mut PKey = 0 as *mut _;
-
-            unsafe {
-                INIT.call_once(|| {
-                    let rsa = RSA::generate(1024).unwrap();
-                    let pkey = PKey::from_rsa(rsa).unwrap();
-                    let gen = X509Generator::new()
-                                .set_valid_period(1)
-                                .add_name("CN".to_owned(), "localhost".to_owned())
-                                .set_sign_hash(Type::SHA256);
-                    let cert = gen.sign(&pkey).unwrap();
-
-                    CERT = Box::into_raw(Box::new(cert));
-                    KEY = Box::into_raw(Box::new(pkey));
-                });
-
-                (&*CERT, &*KEY)
-            }
+            (t!(srv.build()), t!(client.build()))
         }
     } else if #[cfg(target_os = "macos")] {
         extern crate security_framework;
 
         use std::env;
-        use std::fs::{self, File};
-        use std::path::PathBuf;
-        use std::process::Command;
+        use std::fs::File;
         use std::sync::{Once, ONCE_INIT};
 
         use security_framework::certificate::SecCertificate;
-        use security_framework::import_export::Pkcs12ImportOptions;
-        use security_framework::keychain::SecKeychain;
-        use security_framework::os::macos::import_export::Pkcs12ImportOptionsExt;
-        use security_framework::os::macos::keychain::CreateOptions;
-        use security_framework::os::macos::keychain::SecKeychainExt;
 
-        use tokio_tls::backend::secure_transport::ServerContextExt;
-        use tokio_tls::backend::secure_transport::ClientContextExt;
+        use native_tls::backend::security_framework::TlsConnectorBuilderExt;
 
-        fn server_cx() -> io::Result<ServerContext> {
-            let (keychain, keyfile, _) = keys();
-            let mut key = Vec::new();
-            t!(t!(File::open(&keyfile)).read_to_end(&mut key));
-            let mut keychain = t!(SecKeychain::open(&keychain));
-            t!(keychain.unlock(Some("test")));
+        fn contexts() -> (TlsAcceptor, TlsConnector) {
+            let keys = openssl_keys();
 
-            let mut options = Pkcs12ImportOptions::new();
-            Pkcs12ImportOptionsExt::keychain(&mut options, keychain);
-            let identities = t!(options.passphrase("foobar")
-                                       .import(&key));
-            assert!(identities.len() == 1);
-            ServerContext::new(&identities[0].identity, &identities[0].cert_chain)
-        }
+            let pkcs12 = t!(Pkcs12::from_der(&keys.pkcs12_der, "foobar"));
+            let srv = t!(TlsAcceptor::builder(pkcs12));
 
-        fn configure_client(cx: &mut ClientContext) {
-            let (_, _, certfile) = keys();
-            let mut der = Vec::new();
-            t!(t!(File::open(&certfile)).read_to_end(&mut der));
-            let cert = SecCertificate::from_der(&der).unwrap();
-            t!(cx.anchor_certificates(&[cert]));
-        }
+            let cert = SecCertificate::from_der(&keys.cert_der).unwrap();
+            let mut client = t!(TlsConnector::builder());
+            client.anchor_certificates(&[cert]);
 
-        // Like OpenSSL we generate certificates on the fly, but for OSX we
-        // also have to put them into a specific keychain. We put both the
-        // certificates and the keychain next to our binary.
-        //
-        // Right now I don't know of a way to programmatically create a
-        // self-signed certificate, so we just fork out to the `openssl` binary.
-        fn keys() -> (PathBuf, PathBuf, PathBuf) {
-            static INIT: Once = ONCE_INIT;
-
-            let path = t!(env::current_exe());
-            let path = path.parent().unwrap();
-            let keychain = path.join("test.keychain");
-            let keyfile = path.join("test.p12");
-            let certfile = path.join("test.der");
-
-            INIT.call_once(|| {
-                let _ = fs::remove_file(&keychain);
-                let _ = fs::remove_file(&keyfile);
-                let _ = fs::remove_file(&certfile);
-                t!(CreateOptions::new()
-                    .password("test")
-                    .create(&keychain));
-
-                let subj = "/C=US/ST=Denial/L=Sprintfield/O=Dis/CN=localhost";
-                let output = t!(Command::new("openssl")
-                                        .arg("req")
-                                        .arg("-nodes")
-                                        .arg("-new")
-                                        .arg("-x509")
-                                        .arg("-subj").arg(subj)
-                                        .arg("-out").arg(&certfile)
-                                        .arg("-keyout").arg(&keyfile)
-                                        .output());
-                assert!(output.status.success());
-
-                let output = t!(Command::new("openssl")
-                                        .arg("pkcs12")
-                                        .arg("-export")
-                                        .arg("-nodes")
-                                        .arg("-inkey").arg(&keyfile)
-                                        .arg("-in").arg(&certfile)
-                                        .arg("-password").arg("pass:foobar")
-                                        .output());
-                assert!(output.status.success());
-                t!(t!(File::create(&keyfile)).write_all(&output.stdout));
-
-                let output = t!(Command::new("openssl")
-                                        .arg("x509")
-                                        .arg("-outform").arg("der")
-                                        .arg("-in").arg(&certfile)
-                                        .output());
-                assert!(output.status.success());
-                t!(t!(File::create(&certfile)).write_all(&output.stdout));
-            });
-
-            (keychain, keyfile, certfile)
+            (t!(srv.build()), t!(client.build()))
         }
     } else {
         extern crate advapi32;
@@ -290,6 +277,7 @@ cfg_if! {
         extern crate kernel32;
 
         use std::env;
+        use std::fs::File;
         use std::io::Error;
         use std::mem;
         use std::ptr;
@@ -298,18 +286,22 @@ cfg_if! {
         use schannel::cert_context::CertContext;
         use schannel::cert_store::{CertStore, CertAdd};
 
-        use tokio_tls::backend::schannel::ServerContextExt;
+        // use tokio_tls::backend::schannel::ServerContextExt;
 
         const FRIENDLY_NAME: &'static str = "tokio-tls localhost testing cert";
 
-        fn server_cx() -> io::Result<ServerContext> {
-            let mut cx = ServerContext::new();
-            cx.schannel_cred().cert(localhost_cert());
-            Ok(cx)
-        }
+        fn contexts() -> (TlsAcceptor, TlsConnector) {
+            // let mut cx = ServerContext::new();
+            // cx.schannel_cred().cert(localhost_cert());
+            let cert = localhost_cert();
+            let mut store = t!(CertStore::memory());
+            t!(store.add_cert(&cert, CertAdd::Always));
+            let pkcs12_der = t!(store.export_pkcs12("foobar"));
+            let pkcs12 = t!(Pkcs12::from_der(&pkcs12_der, "foobar"));
 
-        fn configure_client(cx: &mut ClientContext) {
-            drop(cx);
+            let srv = t!(TlsAcceptor::builder(pkcs12));
+            let client = t!(TlsConnector::builder());
+            (t!(srv.build()), t!(client.build()))
         }
 
         // ====================================================================
@@ -516,10 +508,8 @@ test suite later.
     }
 }
 
-fn client_cx() -> io::Result<ClientContext> {
-    let mut cx = try!(ClientContext::new());
-    configure_client(&mut cx);
-    Ok(cx)
+fn native2io(e: native_tls::Error) -> io::Error {
+    io::Error::new(io::ErrorKind::Other, e)
 }
 
 const AMT: u64 = 128 * 1024;
@@ -533,13 +523,15 @@ fn client_to_server() {
     let srv = t!(TcpListener::bind(&t!("127.0.0.1:0".parse()), &l.handle()));
     let addr = t!(srv.local_addr());
 
+    let (server_cx, client_cx) = contexts();
+
     // Create a future to accept one socket, connect the ssl stream, and then
     // read all the data from it.
     let socket = srv.incoming().take(1).collect();
     let received = socket.map(|mut socket| {
         socket.remove(0).0
     }).and_then(move |socket| {
-        t!(server_cx()).handshake(socket)
+        server_cx.accept_async(socket).map_err(native2io)
     }).and_then(|socket| {
         read_to_end(socket, Vec::new())
     });
@@ -548,7 +540,7 @@ fn client_to_server() {
     // then write a bunch of data to it.
     let client = TcpStream::connect(&addr, &l.handle());
     let sent = client.and_then(move |socket| {
-        t!(client_cx()).handshake("localhost", socket)
+        client_cx.connect_async("localhost", socket).map_err(native2io)
     }).and_then(|socket| {
         copy(io::repeat(9).take(AMT), socket)
     });
@@ -568,18 +560,20 @@ fn server_to_client() {
     let srv = t!(TcpListener::bind(&t!("127.0.0.1:0".parse()), &l.handle()));
     let addr = t!(srv.local_addr());
 
+    let (server_cx, client_cx) = contexts();
+
     let socket = srv.incoming().take(1).collect();
     let sent = socket.map(|mut socket| {
         socket.remove(0).0
     }).and_then(move |socket| {
-        t!(server_cx()).handshake(socket)
+        server_cx.accept_async(socket).map_err(native2io)
     }).and_then(|socket| {
         copy(io::repeat(9).take(AMT), socket)
     });
 
     let client = TcpStream::connect(&addr, &l.handle());
     let received = client.and_then(move |socket| {
-        t!(client_cx()).handshake("localhost", socket)
+        client_cx.connect_async("localhost", socket).map_err(native2io)
     }).and_then(|socket| {
         read_to_end(socket, Vec::new())
     });
@@ -629,18 +623,21 @@ fn one_byte_at_a_time() {
     let srv = t!(TcpListener::bind(&t!("127.0.0.1:0".parse()), &l.handle()));
     let addr = t!(srv.local_addr());
 
+    let (server_cx, client_cx) = contexts();
+
     let socket = srv.incoming().take(1).collect();
     let sent = socket.map(|mut socket| {
         socket.remove(0).0
     }).and_then(move |socket| {
-        t!(server_cx()).handshake(OneByte { inner: socket })
+        server_cx.accept_async(OneByte { inner: socket }).map_err(native2io)
     }).and_then(|socket| {
         copy(io::repeat(9).take(AMT), socket)
     });
 
     let client = TcpStream::connect(&addr, &l.handle());
     let received = client.and_then(move |socket| {
-        t!(client_cx()).handshake("localhost", OneByte { inner: socket })
+        let socket = OneByte { inner: socket };
+        client_cx.connect_async("localhost", socket).map_err(native2io)
     }).and_then(|socket| {
         read_to_end(socket, Vec::new())
     });

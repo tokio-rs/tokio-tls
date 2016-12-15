@@ -12,102 +12,15 @@
 
 #![deny(missing_docs)]
 
-#[macro_use]
 extern crate futures;
-#[macro_use]
-extern crate cfg_if;
-#[macro_use]
-extern crate log;
 extern crate tokio_core;
+extern crate native_tls;
 
 use std::io::{self, Read, Write};
 
 use futures::{Poll, Future, Async};
+use native_tls::{HandshakeError, Error, TlsConnector, TlsAcceptor};
 use tokio_core::io::Io;
-
-cfg_if! {
-    if #[cfg(feature = "rustls")] {
-        mod rustls;
-        use self::rustls as imp;
-
-        /// Backend-specific extension traits.
-        pub mod backend {
-
-            /// Extension traits specific to the OpenSSL backend.
-            pub mod rustls {
-                pub use rustls::ServerContextExt;
-                pub use rustls::ClientContextExt;
-            }
-        }
-    } else if #[cfg(any(feature = "force-openssl",
-                 all(not(target_os = "macos"),
-                     not(target_os = "windows"))))] {
-        mod openssl;
-        use self::openssl as imp;
-
-        /// Backend-specific extension traits.
-        pub mod backend {
-
-            /// Extension traits specific to the OpenSSL backend.
-            pub mod openssl {
-                pub use openssl::ServerContextExt;
-                pub use openssl::ClientContextExt;
-            }
-        }
-    } else if #[cfg(target_os = "macos")] {
-        mod secure_transport;
-        use self::secure_transport as imp;
-
-        /// Backend-specific extension traits.
-        pub mod backend {
-
-            /// Extension traits specific to the SecureTransport backend.
-            pub mod secure_transport {
-                pub use secure_transport::ServerContextExt;
-                pub use secure_transport::ClientContextExt;
-            }
-        }
-    } else {
-        mod schannel;
-        use self::schannel as imp;
-
-        /// Backend-specific extension traits.
-        pub mod backend {
-
-            /// Extension traits specific to the SChannel backend.
-            pub mod schannel {
-                pub use schannel::ServerContextExt;
-                pub use schannel::ClientContextExt;
-            }
-        }
-    }
-}
-
-/// A context used to initiate server-side connections of a TLS server.
-///
-/// Server contexts are typically much harder to create than a client context
-/// because they need to know the public/private key that they're going to
-/// negotiate the connection with. Specifying these keys is typically done in a
-/// very backend-specific method, unfortunately. For that reason there's no
-/// `new` constructor.
-///
-/// For some examples of how to create a context, though, you can take a look at
-/// the test suite of `futures-tls`.
-pub struct ServerContext {
-    inner: imp::ServerContext,
-}
-
-/// A context used to initiate client-side connections to a TLS server.
-///
-/// Client context by default perform hostname validation of connections issued
-/// by ensuring that certificates sent by the server are trusted by the system
-/// and are indeed valid.
-///
-/// Normally a `ClientContext` doesn't need extra configuration, but extra
-/// configuration can be performed by the backend-specific extension traits.
-pub struct ClientContext {
-    inner: imp::ClientContext,
-}
 
 /// A wrapper around an underlying raw stream which implements the TLS or SSL
 /// protocol.
@@ -117,99 +30,70 @@ pub struct ClientContext {
 /// data. Bytes read from a `TlsStream` are decrypted from `S` and bytes written
 /// to a `TlsStream` are encrypted when passing through to `S`.
 pub struct TlsStream<S> {
-    inner: imp::TlsStream<S>,
+    inner: native_tls::TlsStream<S>,
 }
 
-/// A future returned from `ClientContext::handshake` used to represent an
-/// in-progress TLS handshake.
-///
-/// This future will resolve to a `TlsStream<S>` once the handshake is completed
-/// or an I/O error if it otherwise cannot be completed (or verified).
-pub struct ClientHandshake<S> {
-    inner: imp::ClientHandshake<S>,
+/// Future returned from `TlsConnectorExt::connect_async` which will resolve
+/// once the connection handshake has finished.
+pub struct ConnectAsync<S> {
+    inner: MidHandshake<S>,
 }
 
-/// A future returned from `ServerContext::handshake` used to represent an
-/// in-progress TLS handshake.
-///
-/// This future will resolve to a `TlsStream<S>` once the handshake is completed
-/// or an I/O error if it otherwise cannot be completed (or verified).
-pub struct ServerHandshake<S> {
-    inner: imp::ServerHandshake<S>,
+/// Future returned from `TlsAcceptorExt::accept_async` which will resolve
+/// once the accept handshake has finished.
+pub struct AcceptAsync<S> {
+    inner: MidHandshake<S>,
 }
 
-impl ClientContext {
-    /// Creates a new client context ready for connecting to a remote server.
+struct MidHandshake<S> {
+    inner: Option<Result<native_tls::TlsStream<S>, HandshakeError<S>>>,
+}
+
+/// Extension trait for the `TlsConnector` type in the `native_tls` crate.
+pub trait TlsConnectorExt {
+    /// Connects the provided stream with this connector, assuming the provided
+    /// domain.
     ///
-    /// The client context can be optionally configured through backend-specific
-    /// extension traits, but by default client contexts will verify
-    /// certificates against the system certificate store and otherwise verify
-    /// that certificates are indeed valid.
-    pub fn new() -> io::Result<ClientContext> {
-        imp::ClientContext::new().map(|s| ClientContext { inner: s })
+    /// This function will internally call `TlsConnector::connect` to connect
+    /// the stream and returns a future representing the resolution of the
+    /// connection operation. The returned future will resolve to either
+    /// `TlsStream<S>` or `Error` depending if it's successful or not.
+    ///
+    /// This is typically used for clients who have already established, for
+    /// example, a TCP connection to a remote server. That stream is then
+    /// provided here to perform the client half of a connection to a
+    /// TLS-powered server.
+    fn connect_async<S>(&self, domain: &str, stream: S) -> ConnectAsync<S>
+        where S: Io;
+}
+
+/// Extension trait for the `TlsAcceptor` type in the `native_tls` crate.
+pub trait TlsAcceptorExt {
+    /// Accepts a new client connection with the provided stream.
+    ///
+    /// This function will internally call `TlsAcceptor::accept` to connect
+    /// the stream and returns a future representing the resolution of the
+    /// connection operation. The returned future will resolve to either
+    /// `TlsStream<S>` or `Error` depending if it's successful or not.
+    ///
+    /// This is typically used after a new socket has been accepted from a
+    /// `TcpListener`. That socket is then passed to this function to perform
+    /// the server half of accepting a client connection.
+    fn accept_async<S>(&self, stream: S) -> AcceptAsync<S>
+        where S: Io;
+}
+
+impl<S> TlsStream<S> {
+    /// Get access to the internal `native_tls::TlsStream` stream which also
+    /// transitively allows access to `S`.
+    pub fn get_ref(&self) -> &native_tls::TlsStream<S> {
+        &self.inner
     }
 
-    /// Performs a handshake with the given I/O stream to resolve to an actual
-    /// I/O stream.
-    ///
-    /// This function will consume this context and return a future which will
-    /// either resolve to a `TlsStream<S>` ready for reading/writing if the
-    /// handshake completes successfully, or an error if an erroneous event
-    /// otherwise happens.
-    ///
-    /// The provided `domain` argument is the domain that this client intended
-    /// to connect to. The TLS/SSL backend will verify that the certificate
-    /// provided by the server indeed matches the `domain` provided. The
-    /// returned future will only resolve successfully if the domain matches,
-    /// otherwise an error will be returned.
-    ///
-    /// The given I/O stream should be a freshly connected client (typically a
-    /// TCP stream) ready to negotiate the TLS connection.
-    pub fn handshake<S>(self,
-                        domain: &str,
-                        stream: S)
-                        -> ClientHandshake<S>
-        where S: Io,
-    {
-        ClientHandshake { inner: self.inner.handshake(domain, stream) }
-    }
-}
-
-impl ServerContext {
-    /// Performs a handshake with the given I/O stream to resolve to an actual
-    /// I/O stream.
-    ///
-    /// This function will consume this context and return a future which will
-    /// either resolve to a `TlsStream<S>` ready for reading/writing if the
-    /// handshake completes successfully, or an error if an erroneous event
-    /// otherwise happens.
-    ///
-    /// The given I/O stream should be an accepted client of this server which
-    /// is ready to negotiate the TLS connection.
-    pub fn handshake<S>(self, stream: S) -> ServerHandshake<S>
-        where S: Io,
-    {
-        ServerHandshake { inner: self.inner.handshake(stream) }
-    }
-}
-
-impl<S: Io> Future for ClientHandshake<S> {
-    type Item = TlsStream<S>;
-    type Error = io::Error;
-
-    fn poll(&mut self) -> Poll<TlsStream<S>, io::Error> {
-        let inner = try_ready!(self.inner.poll());
-        Ok(TlsStream { inner: inner }.into())
-    }
-}
-
-impl<S: Io> Future for ServerHandshake<S> {
-    type Item = TlsStream<S>;
-    type Error = io::Error;
-
-    fn poll(&mut self) -> Poll<TlsStream<S>, io::Error> {
-        let inner = try_ready!(self.inner.poll());
-        Ok(TlsStream { inner: inner }.into())
+    /// Get mutable access to the internal `native_tls::TlsStream` stream which
+    /// also transitively allows mutable access to `S`.
+    pub fn get_mut(&mut self) -> &mut native_tls::TlsStream<S> {
+        &mut self.inner
     }
 }
 
@@ -230,11 +114,68 @@ impl<S: Io> Write for TlsStream<S> {
 }
 
 impl<S: Io> Io for TlsStream<S> {
-    fn poll_read(&mut self) -> Async<()> {
-        self.inner.poll_read()
-    }
+}
 
-    fn poll_write(&mut self) -> Async<()> {
-        self.inner.poll_write()
+impl TlsConnectorExt for TlsConnector {
+    fn connect_async<S>(&self, domain: &str, stream: S) -> ConnectAsync<S>
+        where S: Io
+    {
+        ConnectAsync {
+            inner: MidHandshake {
+                inner: Some(self.connect(domain, stream)),
+            },
+        }
+    }
+}
+
+impl TlsAcceptorExt for TlsAcceptor {
+    fn accept_async<S>(&self, stream: S) -> AcceptAsync<S>
+        where S: Io
+    {
+        AcceptAsync {
+            inner: MidHandshake {
+                inner: Some(self.accept(stream)),
+            },
+        }
+    }
+}
+
+impl<S: Io> Future for ConnectAsync<S> {
+    type Item = TlsStream<S>;
+    type Error = Error;
+
+    fn poll(&mut self) -> Poll<TlsStream<S>, Error> {
+        self.inner.poll()
+    }
+}
+
+impl<S: Io> Future for AcceptAsync<S> {
+    type Item = TlsStream<S>;
+    type Error = Error;
+
+    fn poll(&mut self) -> Poll<TlsStream<S>, Error> {
+        self.inner.poll()
+    }
+}
+
+impl<S: Io> Future for MidHandshake<S> {
+    type Item = TlsStream<S>;
+    type Error = Error;
+
+    fn poll(&mut self) -> Poll<TlsStream<S>, Error> {
+        match self.inner.take().expect("cannot poll MidHandshake twice") {
+            Ok(stream) => Ok(TlsStream { inner: stream }.into()),
+            Err(HandshakeError::Failure(e)) => Err(e),
+            Err(HandshakeError::Interrupted(s)) => {
+                match s.handshake() {
+                    Ok(stream) => Ok(TlsStream { inner: stream }.into()),
+                    Err(HandshakeError::Failure(e)) => Err(e),
+                    Err(HandshakeError::Interrupted(s)) => {
+                        self.inner = Some(Err(HandshakeError::Interrupted(s)));
+                        Ok(Async::NotReady)
+                    }
+                }
+            }
+        }
     }
 }
