@@ -3,12 +3,17 @@
 //! This library is an implementation of TLS streams using the most appropriate
 //! system library by default for negotiating the connection. That is, on
 //! Windows this library uses SChannel, on OSX it uses SecureTransport, and on
-//! other platforms it uses OpenSSL. The usage of OpenSSL can optionally be
-//! forced with the `force-openssl` feature of this crate.
+//! other platforms it uses OpenSSL.
 //!
 //! Each TLS stream implements the `Read` and `Write` traits to interact and
 //! interoperate with the rest of the futures I/O ecosystem. Client connections
 //! initiated from this crate verify hostnames automatically and by default.
+//!
+//! This crate primarily exports this ability through two extension traits,
+//! `TlsConnectorExt` and `TlsAcceptorExt`. These traits augment the
+//! functionality provided by the `native-tls` crate, on which this crate is
+//! built. Configuration of TLS parameters is still primarily done through the
+//! `native-tls` crate.
 
 #![deny(missing_docs)]
 
