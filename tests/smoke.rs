@@ -284,17 +284,13 @@ cfg_if! {
         use std::sync::{Once, ONCE_INIT};
 
         use schannel::cert_context::CertContext;
-        use schannel::cert_store::{CertStore, CertAdd};
-
-        // use tokio_tls::backend::schannel::ServerContextExt;
+        use schannel::cert_store::{CertStore, CertAdd, Memory};
 
         const FRIENDLY_NAME: &'static str = "tokio-tls localhost testing cert";
 
         fn contexts() -> (TlsAcceptor, TlsConnector) {
-            // let mut cx = ServerContext::new();
-            // cx.schannel_cred().cert(localhost_cert());
             let cert = localhost_cert();
-            let mut store = t!(CertStore::memory());
+            let mut store = t!(Memory::new()).into_store();
             t!(store.add_cert(&cert, CertAdd::Always));
             let pkcs12_der = t!(store.export_pkcs12("foobar"));
             let pkcs12 = t!(Pkcs12::from_der(&pkcs12_der, "foobar"));

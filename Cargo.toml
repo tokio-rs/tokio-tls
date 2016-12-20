@@ -35,17 +35,4 @@ schannel = "0.1"
 winapi = "0.2"
 
 [replace.'native-tls:0.1.0']
-git = 'https://github.com/alexcrichton/rust-native-tls'
-branch = 'changes'
-
-[replace.'security-framework:0.1.9']
-git = 'https://github.com/alexcrichton/rust-security-framework'
-branch = 'handshake2'
-
-[replace.'security-framework-sys:0.1.9']
-git = 'https://github.com/alexcrichton/rust-security-framework'
-branch = 'handshake2'
-
-[replace.'schannel:0.1.1']
-git = 'https://github.com/alexcrichton/schannel-rs'
-branch = 'export-pkcs12'
+git = 'https://github.com/sfackler/rust-native-tls'
