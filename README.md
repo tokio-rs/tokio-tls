@@ -3,7 +3,7 @@
 An implementation of TLS/SSL streams for Tokio built on top of the [`native-tls`
 crate]
 
-[![Build Status](https://travis-ci.org/tokio-rs/tokio-tls.svg?branch=master)](https://travis-ci.org/tokio/tokio-tls)
+[![Build Status](https://travis-ci.org/tokio-rs/tokio-tls.svg?branch=master)](https://travis-ci.org/tokio-rs/tokio-tls)
 [![Build status](https://ci.appveyor.com/api/projects/status/iiut5d2mts6bt5g1?svg=true)](https://ci.appveyor.com/project/alexcrichton/tokio-tls)
 
 [Documentation](https://tokio-rs.github.io/tokio-tls)
