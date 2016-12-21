@@ -109,7 +109,8 @@ fn fetch_google() {
     // any response code is fine
     assert!(data.starts_with(b"HTTP/1.0 "));
 
-    let data = str::from_utf8(&data).unwrap().trim_right();
+    let data = String::from_utf8_lossy(&data);
+    let data = data.trim_right();
     assert!(data.ends_with("</html>") || data.ends_with("</HTML>"));
 }
 
