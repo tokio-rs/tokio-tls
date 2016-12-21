@@ -16,7 +16,7 @@ First, add this to your `Cargo.toml`:
 ```toml
 [dependencies]
 native-tls = "0.1"
-tokio-tls = { git = "https://github.com/tokio-rs/tokio-tls" }
+tokio-tls = "0.1"
 ```
 
 Next, add this to your crate:
