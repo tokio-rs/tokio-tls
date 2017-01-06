@@ -6,7 +6,7 @@ authors = ["Carl Lerche <me@carllerche.com>",
 license = "MIT/Apache-2.0"
 repository = "https://github.com/tokio-rs/tokio-tls"
 homepage = "https://github.com/tokio-rs/tokio-tls"
-documentation = "https://tokio-rs.github.io/tokio-tls"
+documentation = "https://docs.rs/tokio-tls"
 description = """
 An implementation of TLS/SSL streams for Tokio giving an implementation of TLS
 for nonblocking I/O streams.
