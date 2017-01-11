@@ -28,6 +28,11 @@ extern crate tokio_tls;
 use tokio_tls::{TlsConnectorExt, TlsAcceptorExt};
 ```
 
+You can find an example of using this crate at [https://tokio.rs] along with a
+detailed explanation of what's happening.
+
+[https://tokio.rs]: https://tokio.rs/docs/getting-started/tls/
+
 This crate provides two extension traits, `TlsConnectorExt` and
 `TlsAcceptorExt`, which augment the functionality provided by the [`native-tls`
 crate]. These extension traits provide the ability to connect a stream
