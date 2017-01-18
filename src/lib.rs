@@ -17,15 +17,18 @@
 
 #![deny(missing_docs)]
 
+#[macro_use]
 extern crate futures;
-extern crate tokio_core;
 extern crate native_tls;
+extern crate tokio_core;
 
 use std::io::{self, Read, Write};
 
 use futures::{Poll, Future, Async};
 use native_tls::{HandshakeError, Error, TlsConnector, TlsAcceptor};
 use tokio_core::io::Io;
+
+pub mod proto;
 
 /// A wrapper around an underlying raw stream which implements the TLS or SSL
 /// protocol.

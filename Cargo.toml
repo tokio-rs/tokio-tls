@@ -16,6 +16,7 @@ for nonblocking I/O streams.
 futures = "0.1.4"
 tokio-core = "0.1.1"
 native-tls = "0.1"
+tokio-proto = { version = "0.1", optional = true }
 
 [dev-dependencies]
 env_logger = { version = "0.3", default-features = false }
@@ -33,6 +34,3 @@ crypt32-sys = "0.2"
 kernel32-sys = "0.2"
 schannel = "0.1"
 winapi = "0.2"
-
-[replace.'native-tls:0.1.0']
-git = 'https://github.com/sfackler/rust-native-tls'

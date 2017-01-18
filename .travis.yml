@@ -10,7 +10,8 @@ before_script:
 script:
   - cargo build
   - cargo test
-  - cargo doc --no-deps
+  - cargo test --features tokio-proto
+  - cargo doc --no-deps --features tokio-proto
 after_success:
   - travis-cargo --only nightly doc-upload
 env:
