@@ -286,9 +286,9 @@ impl<T, I> Future for ServerStreamingMultiplexBind<T, I>
 
 /// TLS client protocol wrapper.
 ///
-/// This structure is a wrapper for other implementations of `ServerProto` in
+/// This structure is a wrapper for other implementations of `ClientProto` in
 /// the `tokio-proto` crate. This structure will negotiate a TLS connection
-/// first and then delegate all further operations to the `ServerProto`
+/// first and then delegate all further operations to the `ClientProto`
 /// implementation for the underlying type.
 pub struct Client<T> {
     inner: Arc<T>,
@@ -300,10 +300,8 @@ impl<T> Client<T> {
     /// Constructs a new TLS protocol which will delegate to the underlying
     /// `protocol` specified.
     ///
-    /// The `acceptor` provided will be used to accept TLS connections. All new
-    /// connections will go through the TLS acceptor first and then further I/O
-    /// will go through the negotiated TLS stream through the `protocol`
-    /// specified.
+    /// The `connector` provided will be used to configure the TLS connection. Further I/O
+    /// will go through the negotiated TLS stream through the `protocol` specified.
     pub fn new(protocol: T,
                connector: TlsConnector,
                hostname: &str) -> Client<T> {
