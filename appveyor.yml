@@ -13,4 +13,4 @@ build: false
 test_script:
   - cargo build
   - cargo test
-  - cargo test --features force-rustls
+  - cargo test --features tokio-proto

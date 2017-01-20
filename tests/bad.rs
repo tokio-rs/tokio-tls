@@ -1,18 +1,20 @@
-extern crate futures;
 extern crate env_logger;
+extern crate futures;
+extern crate native_tls;
 extern crate tokio_core;
 extern crate tokio_tls;
 
 #[macro_use]
 extern crate cfg_if;
 
-use std::io::Error;
+use std::io::{self, Error};
 use std::net::ToSocketAddrs;
 
 use futures::Future;
-use tokio_tls::ClientContext;
-use tokio_core::reactor::Core;
+use native_tls::TlsConnector;
 use tokio_core::net::TcpStream;
+use tokio_core::reactor::Core;
+use tokio_tls::TlsConnectorExt;
 
 macro_rules! t {
     ($e:expr) => (match $e {
@@ -44,15 +46,16 @@ cfg_if! {
             verify_failed(err, "UnknownIssuer");
         }
     } else if #[cfg(any(feature = "force-openssl",
-                 all(not(target_os = "macos"),
-                     not(target_os = "windows"))))] {
+                        all(not(target_os = "macos"),
+                            not(target_os = "windows"))))] {
         extern crate openssl;
 
         use openssl::ssl;
+        use native_tls::backend::openssl::ErrorExt;
 
         fn get(err: &Error) -> &openssl::error::ErrorStack {
             let err = err.get_ref().unwrap();
-            match *err.downcast_ref::<ssl::error::Error>().unwrap() {
+            match *err.downcast_ref::<native_tls::Error>().unwrap().openssl_error() {
                 ssl::Error::Ssl(ref v) => v,
                 ref e => panic!("not an ssl eror: {:?}", e),
             }
@@ -60,7 +63,7 @@ cfg_if! {
 
         fn verify_failed(err: &Error) {
             assert!(get(err).errors().iter().any(|e| {
-                e.reason() == "certificate verify failed"
+                e.reason() == Some("certificate verify failed")
             }), "bad errors: {:?}", err);
         }
 
@@ -69,13 +72,12 @@ cfg_if! {
         use verify_failed as assert_self_signed;
         use verify_failed as assert_untrusted_root;
     } else if #[cfg(target_os = "macos")] {
-        extern crate security_framework;
-
-        use security_framework::base::Error as SfError;
+        use native_tls::backend::security_framework::ErrorExt;
 
         fn assert_invalid_cert_chain(err: &Error) {
             let err = err.get_ref().unwrap();
-            let err = err.downcast_ref::<SfError>().unwrap();
+            let err = err.downcast_ref::<native_tls::Error>().unwrap();
+            let err = err.security_framework_error();
             assert_eq!(err.message().unwrap(), "invalid certificate chain");
         }
 
@@ -86,12 +88,20 @@ cfg_if! {
     } else {
         extern crate winapi;
 
+        use native_tls::backend::schannel::ErrorExt;
+
         fn assert_expired_error(err: &Error) {
+            let err = err.get_ref().unwrap();
+            let err = err.downcast_ref::<native_tls::Error>().unwrap();
+            let err = err.schannel_error();
             let code = err.raw_os_error().unwrap();
             assert_eq!(code as usize, winapi::CERT_E_EXPIRED as usize);
         }
 
         fn assert_wrong_host(err: &Error) {
+            let err = err.get_ref().unwrap();
+            let err = err.downcast_ref::<native_tls::Error>().unwrap();
+            let err = err.schannel_error();
             let code = err.raw_os_error().unwrap() as usize;
             // TODO: this... may be a bug in schannel-rs
             assert!(code == winapi::CERT_E_CN_NO_MATCH as usize ||
@@ -100,11 +110,17 @@ cfg_if! {
         }
 
         fn assert_self_signed(err: &Error) {
+            let err = err.get_ref().unwrap();
+            let err = err.downcast_ref::<native_tls::Error>().unwrap();
+            let err = err.schannel_error();
             let code = err.raw_os_error().unwrap();
             assert_eq!(code as usize, winapi::CERT_E_UNTRUSTEDROOT as usize);
         }
 
         fn assert_untrusted_root(err: &Error) {
+            let err = err.get_ref().unwrap();
+            let err = err.downcast_ref::<native_tls::Error>().unwrap();
+            let err = err.schannel_error();
             let code = err.raw_os_error().unwrap();
             assert_eq!(code as usize, winapi::CERT_E_UNTRUSTEDROOT as usize);
         }
@@ -120,7 +136,11 @@ fn get_host(host: &'static str) -> Error {
     let mut l = t!(Core::new());
     let client = TcpStream::connect(&addr, &l.handle());
     let data = client.and_then(move |socket| {
-        t!(ClientContext::new()).handshake(host, socket)
+        let builder = t!(TlsConnector::builder());
+        let cx = t!(builder.build());
+        cx.connect_async(host, socket).map_err(|e| {
+            Error::new(io::ErrorKind::Other, e)
+        })
     });
 
     let res = l.run(data);

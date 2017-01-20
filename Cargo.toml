@@ -6,47 +6,31 @@ authors = ["Carl Lerche <me@carllerche.com>",
 license = "MIT/Apache-2.0"
 repository = "https://github.com/tokio-rs/tokio-tls"
 homepage = "https://github.com/tokio-rs/tokio-tls"
-documentation = "https://tokio-rs.github.io/tokio-tls"
+documentation = "https://docs.rs/tokio-tls"
 description = """
 An implementation of TLS/SSL streams for Tokio giving an implementation of TLS
 for nonblocking I/O streams.
 """
 
 [dependencies]
+futures = "0.1.4"
+tokio-core = "0.1.1"
+native-tls = "0.1"
+tokio-proto = { version = "0.1", optional = true }
+
+[dev-dependencies]
+env_logger = { version = "0.3", default-features = false }
 cfg-if = "0.1"
-futures = "0.1"
-log = "0.3"
-tokio-core = "0.1"
 
-# Optional dependency that can be enabled with the `force-openssl` feature
-openssl = { version = "0.8", optional = true }
-openssl-verify = { version = "0.2", optional = true }
+[target.'cfg(all(not(target_os = "macos"), not(windows)))'.dev-dependencies]
+openssl = "0.9"
 
-# Optional dependency to use `rustls` as a backend, enabled with `force-rustls`
-rustls = { version = "0.1.2", optional = true }
-webpki-roots = { version = "0.2", optional = true }
-
-[target.'cfg(all(unix, not(target_os = "macos")))'.dependencies]
-openssl = "0.8"
-openssl-verify = "0.2"
-
-[target.'cfg(target_os = "macos")'.dependencies]
+[target.'cfg(target_os = "macos")'.dev-dependencies]
 security-framework = "0.1"
-
-[target.'cfg(windows)'.dependencies]
-schannel = "0.1"
 
 [target.'cfg(windows)'.dev-dependencies]
 advapi32-sys = "0.2"
 crypt32-sys = "0.2"
 kernel32-sys = "0.2"
+schannel = "0.1"
 winapi = "0.2"
-
-[dev-dependencies]
-env_logger = "0.3"
-webpki = "0.3"
-untrusted = "0.3"
-
-[features]
-force-openssl = ["openssl", "openssl-verify"]
-force-rustls = ["rustls", "webpki-roots"]

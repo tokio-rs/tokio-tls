@@ -10,14 +10,13 @@ before_script:
 script:
   - cargo build
   - cargo test
-  - cargo test --features force-openssl
-  - cargo test --features force-rustls
-  - cargo doc --no-deps
+  - cargo test --features tokio-proto
+  - cargo doc --no-deps --features tokio-proto
 after_success:
   - travis-cargo --only nightly doc-upload
 env:
   global:
-    - secure: lpb7ZgDvUxeBUoaQIWQ6UFw8JE54DqRZ9NeMbpXcyAxBU7VL+Fvpy6XJwLx3MTxZPeLLNdOxfWPj7R2JH4R8CRk1MPB0fGEHvX5gy6AIybyUX3qvbrGdKd6MVc4/y7SR97yUtvFSrJNcKyMPwBCN8HPhgWNXlHAfE4MZnVBKRfgu9qoYNee/Ti2Bvta91OAQcxX2CFfoFJU0n8OwIDfYLXlZI1DGhKn6dZ/TpAFS2yviV10IexsBgEoeTLl5WYuZg6G0QTCMKtd/TEJlQryonYOaLC29/GSsDFwWXk89JNgkv3NUaRPk6tEEyLbtc7Coz73wTB0KKMRVnzo56vXSw0KC0BGeri2F9Qdm5Hxvm9/IRBrL05el8weLtvrNWphHz4FVthZICl1Uo1tH7NNz9e8Ejy3NwJVwsRUZXL5scA/+EsKIH9ZxkmqoNFEvPrjBnc42WOvzCdp92XCM/yu1+QSIAFg9rX/k8VG3SjRcNsPftbSVnDdUJH6lG0Bbivn4n5WQ/+JvbNxGcxr8BM07xZi0529zwlULcdqZDPaaK/GD0bJkIt0eHFfraJWKYsJ2lbW+Avo3k01dMQAJ9UFZhJS1/d36D9r60oXmy1fWVA7L6AF1WZx0h6nBpeqovs5P1YF9J9VeHFDPOWnJ7uZEcM0tumUEAZAYHFcfq54bsAg=
+    - secure: "qmkLizSR0N9HBFdIfsIpo4bev12RQtnUnhF4326ZgQRd/HqSc0EGDrY5HIcOiXwoAiwVsHYmNK+6jf61/bZZOwdEeQXtCjEXzGExIEkBq3RgIvlBti7rLfb+bqC3N2w8MAH09MsIqMXiccQtX6UDIbzGioST+ZRSCGLJP+4EcB+6L/rt9JQN73LldTBhLuMA4pq3AqXhaYmGV6rEcqDLL95PFLwkidVDXsZE1itT/t/GW1tAxK52agc4VBoJWcbN8yBr8oy/OVLKaMg3XFI8Jm++KNyWMXiXDtuHL4TDXr2v5y+INR4moatsXXYxuZcbGyt1xDmiiQnnQenrGHTFbLTnaIJ6X0KCzGuNO3PWRNXpD/d2ZaYzM2Sdu1Oqxad5nHoZCKtiroscs9rpT/OadtU5rv6raorvoSJxBmZd1ExYIjqXJpfQxoHcIUfD/RX+1FXQKRFJph0Cyr8UpHBbr6uJQoARIlBoQOScexivgV2ijtKEYiEHpdxtm5hif94SfJsV6oiqOJww/GC0eqw/XJLlC4PmmN8hXh0h/HBghlOaTtp1vhTgIfTP8X4muJiS9kRUY7Ojlyyrr8KxoGYImKJb/3bn8iwRGQktbaSZ8+9r9YZK61x1v0u7tKA5CBQf8k9HIPBxerNBerefLv3h3toYv2TVZy+xTdl+xfAC4/o="
 notifications:
   email:
     on_success: never
