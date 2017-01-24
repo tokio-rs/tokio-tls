@@ -12,6 +12,9 @@ An implementation of TLS/SSL streams for Tokio giving an implementation of TLS
 for nonblocking I/O streams.
 """
 
+[features]
+tokio-proto = ["tokio-proto"]
+
 [dependencies]
 futures = "0.1.4"
 tokio-core = "0.1.1"
