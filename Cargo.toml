@@ -1,6 +1,6 @@
 [package]
 name = "tokio-tls"
-version = "0.1.0"
+version = "0.1.1"
 authors = ["Carl Lerche <me@carllerche.com>",
            "Alex Crichton <alex@alexcrichton.com>"]
 license = "MIT/Apache-2.0"
@@ -11,6 +11,11 @@ description = """
 An implementation of TLS/SSL streams for Tokio giving an implementation of TLS
 for nonblocking I/O streams.
 """
+categories = ["asynchronous", "network-programming"]
+
+[badges]
+travis-ci = { repository = "tokio-rs/tokio-tls" }
+appveyor = { repository = "alexcrichton/tokio-tls" }
 
 [dependencies]
 futures = "0.1.4"
