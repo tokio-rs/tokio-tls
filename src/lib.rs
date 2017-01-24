@@ -18,6 +18,7 @@
 #![deny(missing_docs)]
 #![doc(html_root_url = "https://docs.rs/tokio-tls/0.1")]
 
+#[cfg_attr(feature = "tokio-proto", macro_use)]
 extern crate futures;
 extern crate native_tls;
 extern crate tokio_core;
