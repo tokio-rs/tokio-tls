@@ -2,6 +2,7 @@ extern crate env_logger;
 extern crate futures;
 extern crate native_tls;
 extern crate tokio_core;
+extern crate tokio_io;
 extern crate tokio_tls;
 
 #[macro_use]
@@ -13,7 +14,7 @@ use std::str;
 
 use futures::Future;
 use native_tls::TlsConnector;
-use tokio_core::io::{flush, read_to_end, write_all};
+use tokio_io::io::{flush, read_to_end, write_all};
 use tokio_core::net::TcpStream;
 use tokio_core::reactor::Core;
 use tokio_tls::TlsConnectorExt;

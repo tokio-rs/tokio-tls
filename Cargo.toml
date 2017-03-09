@@ -18,9 +18,10 @@ travis-ci = { repository = "tokio-rs/tokio-tls" }
 appveyor = { repository = "alexcrichton/tokio-tls" }
 
 [dependencies]
-futures = "0.1.4"
-tokio-core = "0.1.1"
+futures = "0.1.11"
 native-tls = "0.1"
+tokio-core = "0.1.6"
+tokio-io = "0.1"
 tokio-proto = { version = "0.1", optional = true }
 
 [dev-dependencies]

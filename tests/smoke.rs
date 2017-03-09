@@ -2,6 +2,7 @@ extern crate env_logger;
 extern crate futures;
 extern crate native_tls;
 extern crate tokio_core;
+extern crate tokio_io;
 extern crate tokio_tls;
 
 #[macro_use]
@@ -10,9 +11,10 @@ extern crate cfg_if;
 use std::io::{self, Read, Write};
 use std::process::Command;
 
-use futures::{Future, Async};
+use futures::{Future, Poll};
 use futures::stream::Stream;
-use tokio_core::io::{read_to_end, copy, Io};
+use tokio_io::{AsyncRead, AsyncWrite};
+use tokio_io::io::{read_to_end, copy, shutdown};
 use tokio_core::reactor::Core;
 use tokio_core::net::{TcpListener, TcpStream};
 use tokio_tls::{TlsConnectorExt, TlsAcceptorExt};
@@ -539,6 +541,8 @@ fn client_to_server() {
         client_cx.connect_async("localhost", socket).map_err(native2io)
     }).and_then(|socket| {
         copy(io::repeat(9).take(AMT), socket)
+    }).and_then(|(amt, _repeat, socket)| {
+        shutdown(socket).map(move |_| amt)
     });
 
     // Finally, run everything!
@@ -565,6 +569,8 @@ fn server_to_client() {
         server_cx.accept_async(socket).map_err(native2io)
     }).and_then(|socket| {
         copy(io::repeat(9).take(AMT), socket)
+    }).and_then(|(amt, _repeat, socket)| {
+        shutdown(socket).map(move |_| amt)
     });
 
     let client = TcpStream::connect(&addr, &l.handle());
@@ -600,13 +606,10 @@ impl<S: Write> Write for OneByte<S> {
     }
 }
 
-impl<S: Io> Io for OneByte<S> {
-    fn poll_read(&mut self) -> Async<()> {
-        self.inner.poll_read()
-    }
-
-    fn poll_write(&mut self) -> Async<()> {
-        self.inner.poll_write()
+impl<S: AsyncRead> AsyncRead for OneByte<S> {}
+impl<S: AsyncWrite> AsyncWrite for OneByte<S> {
+    fn shutdown(&mut self) -> Poll<(), io::Error> {
+        self.inner.shutdown()
     }
 }
 
@@ -628,6 +631,8 @@ fn one_byte_at_a_time() {
         server_cx.accept_async(OneByte { inner: socket }).map_err(native2io)
     }).and_then(|socket| {
         copy(io::repeat(9).take(AMT), socket)
+    }).and_then(|(amt, _repeat, socket)| {
+        shutdown(socket).map(move |_| amt)
     });
 
     let client = TcpStream::connect(&addr, &l.handle());

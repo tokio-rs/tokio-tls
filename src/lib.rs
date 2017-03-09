@@ -21,13 +21,17 @@
 #[cfg_attr(feature = "tokio-proto", macro_use)]
 extern crate futures;
 extern crate native_tls;
+#[macro_use]
 extern crate tokio_core;
+extern crate tokio_io;
 
 use std::io::{self, Read, Write};
 
 use futures::{Poll, Future, Async};
 use native_tls::{HandshakeError, Error, TlsConnector, TlsAcceptor};
+#[allow(deprecated)]
 use tokio_core::io::Io;
+use tokio_io::{AsyncRead, AsyncWrite};
 
 pub mod proto;
 
@@ -73,8 +77,15 @@ pub trait TlsConnectorExt {
     /// example, a TCP connection to a remote server. That stream is then
     /// provided here to perform the client half of a connection to a
     /// TLS-powered server.
+    ///
+    /// # Compatibility notes
+    ///
+    /// Note that this method currently requires `S: Read + Write` but it's
+    /// highly recommended to ensure that the object implements the `AsyncRead`
+    /// and `AsyncWrite` traits as well, otherwise this function will not work
+    /// properly.
     fn connect_async<S>(&self, domain: &str, stream: S) -> ConnectAsync<S>
-        where S: Io;
+        where S: Read + Write; // TODO: change to AsyncRead + AsyncWrite
 }
 
 /// Extension trait for the `TlsAcceptor` type in the `native_tls` crate.
@@ -89,8 +100,15 @@ pub trait TlsAcceptorExt {
     /// This is typically used after a new socket has been accepted from a
     /// `TcpListener`. That socket is then passed to this function to perform
     /// the server half of accepting a client connection.
+    ///
+    /// # Compatibility notes
+    ///
+    /// Note that this method currently requires `S: Read + Write` but it's
+    /// highly recommended to ensure that the object implements the `AsyncRead`
+    /// and `AsyncWrite` traits as well, otherwise this function will not work
+    /// properly.
     fn accept_async<S>(&self, stream: S) -> AcceptAsync<S>
-        where S: Io;
+        where S: Read + Write; // TODO: change to AsyncRead + AsyncWrite
 }
 
 impl<S> TlsStream<S> {
@@ -107,13 +125,13 @@ impl<S> TlsStream<S> {
     }
 }
 
-impl<S: Io> Read for TlsStream<S> {
+impl<S: Read + Write> Read for TlsStream<S> {
     fn read(&mut self, buf: &mut [u8]) -> io::Result<usize> {
         self.inner.read(buf)
     }
 }
 
-impl<S: Io> Write for TlsStream<S> {
+impl<S: Read + Write> Write for TlsStream<S> {
     fn write(&mut self, buf: &[u8]) -> io::Result<usize> {
         self.inner.write(buf)
     }
@@ -123,12 +141,23 @@ impl<S: Io> Write for TlsStream<S> {
     }
 }
 
+#[allow(deprecated)]
 impl<S: Io> Io for TlsStream<S> {
+}
+
+impl<S: AsyncRead + AsyncWrite> AsyncRead for TlsStream<S> {
+}
+
+impl<S: AsyncRead + AsyncWrite> AsyncWrite for TlsStream<S> {
+    fn shutdown(&mut self) -> Poll<(), io::Error> {
+        try_nb!(self.inner.shutdown());
+        self.inner.get_mut().shutdown()
+    }
 }
 
 impl TlsConnectorExt for TlsConnector {
     fn connect_async<S>(&self, domain: &str, stream: S) -> ConnectAsync<S>
-        where S: Io
+        where S: Read + Write,
     {
         ConnectAsync {
             inner: MidHandshake {
@@ -140,7 +169,7 @@ impl TlsConnectorExt for TlsConnector {
 
 impl TlsAcceptorExt for TlsAcceptor {
     fn accept_async<S>(&self, stream: S) -> AcceptAsync<S>
-        where S: Io
+        where S: Read + Write,
     {
         AcceptAsync {
             inner: MidHandshake {
@@ -150,7 +179,8 @@ impl TlsAcceptorExt for TlsAcceptor {
     }
 }
 
-impl<S: Io> Future for ConnectAsync<S> {
+// TODO: change this to AsyncRead/AsyncWrite on next major version
+impl<S: Read + Write> Future for ConnectAsync<S> {
     type Item = TlsStream<S>;
     type Error = Error;
 
@@ -159,7 +189,8 @@ impl<S: Io> Future for ConnectAsync<S> {
     }
 }
 
-impl<S: Io> Future for AcceptAsync<S> {
+// TODO: change this to AsyncRead/AsyncWrite on next major version
+impl<S: Read + Write> Future for AcceptAsync<S> {
     type Item = TlsStream<S>;
     type Error = Error;
 
@@ -168,7 +199,8 @@ impl<S: Io> Future for AcceptAsync<S> {
     }
 }
 
-impl<S: Io> Future for MidHandshake<S> {
+// TODO: change this to AsyncRead/AsyncWrite on next major version
+impl<S: Read + Write> Future for MidHandshake<S> {
     type Item = TlsStream<S>;
     type Error = Error;
 

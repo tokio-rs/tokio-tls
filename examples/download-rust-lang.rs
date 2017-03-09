@@ -1,6 +1,7 @@
 extern crate futures;
 extern crate native_tls;
 extern crate tokio_core;
+extern crate tokio_io;
 extern crate tokio_tls;
 
 use std::io;
@@ -25,14 +26,14 @@ fn main() {
         })
     });
     let request = tls_handshake.and_then(|socket| {
-        tokio_core::io::write_all(socket, "\
+        tokio_io::io::write_all(socket, "\
             GET / HTTP/1.0\r\n\
             Host: www.rust-lang.org\r\n\
             \r\n\
         ".as_bytes())
     });
     let response = request.and_then(|(socket, _)| {
-        tokio_core::io::read_to_end(socket, Vec::new())
+        tokio_io::io::read_to_end(socket, Vec::new())
     });
 
     let (_, data) = core.run(response).unwrap();
