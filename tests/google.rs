@@ -58,7 +58,7 @@ cfg_if! {
             let err = err.get_ref().unwrap();
             let err = err.downcast_ref::<native_tls::Error>().unwrap();
             let err = err.security_framework_error();
-            assert_eq!(err.message().unwrap(), "invalid certificate chain");
+            assert_eq!(err.message().unwrap(), "The trust policy was not trusted.");
         }
     } else {
         extern crate winapi;
