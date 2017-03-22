@@ -28,10 +28,11 @@ tokio-proto = { version = "0.1", optional = true }
 env_logger = { version = "0.3", default-features = false }
 cfg-if = "0.1"
 
-[target.'cfg(all(not(target_os = "macos"), not(windows)))'.dev-dependencies]
+[target.'cfg(all(not(target_os = "macos"), not(windows), not(target_os = "ios")))'.dev-dependencies]
 openssl = "0.9"
 
-[target.'cfg(target_os = "macos")'.dev-dependencies]
+
+[target.'cfg(any(target_os = "macos", target_os = "ios"))'.dev-dependencies]
 security-framework = "0.1"
 
 [target.'cfg(windows)'.dev-dependencies]

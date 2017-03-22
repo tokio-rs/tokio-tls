@@ -47,7 +47,8 @@ cfg_if! {
         }
     } else if #[cfg(any(feature = "force-openssl",
                         all(not(target_os = "macos"),
-                            not(target_os = "windows"))))] {
+                            not(target_os = "windows"),
+                            not(target_os = "ios"))))] {
         extern crate openssl;
 
         use openssl::ssl;
@@ -71,7 +72,7 @@ cfg_if! {
         use verify_failed as assert_wrong_host;
         use verify_failed as assert_self_signed;
         use verify_failed as assert_untrusted_root;
-    } else if #[cfg(target_os = "macos")] {
+    } else if #[cfg(any(target_os = "macos", target_os = "ios"))] {
         use native_tls::backend::security_framework::ErrorExt;
 
         fn assert_invalid_cert_chain(err: &Error) {
