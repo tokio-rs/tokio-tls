@@ -34,7 +34,8 @@ cfg_if! {
         }
     } else if #[cfg(any(feature = "force-openssl",
                  all(not(target_os = "macos"),
-                     not(target_os = "windows"))))] {
+                     not(target_os = "windows"),
+                     not(target_os = "ios"))))] {
 	    extern crate openssl;
 
         use openssl::ssl;
@@ -51,7 +52,7 @@ cfg_if! {
 				e.reason() == Some("certificate verify failed")
 			}), "bad errors: {:?}", errs);
         }
-    } else if #[cfg(target_os = "macos")] {
+    } else if #[cfg(any(target_os = "macos", target_os = "ios"))] {
         use native_tls::backend::security_framework::ErrorExt;
 
         fn assert_bad_hostname_error(err: &Error) {

@@ -212,7 +212,8 @@ cfg_if! {
         }
     } else if #[cfg(any(feature = "force-openssl",
                         all(not(target_os = "macos"),
-                            not(target_os = "windows"))))] {
+                            not(target_os = "windows"),
+                            not(target_os = "ios"))))] {
         extern crate openssl;
 
         use std::fs::File;
@@ -248,7 +249,7 @@ cfg_if! {
 
             (t!(srv.build()), t!(client.build()))
         }
-    } else if #[cfg(target_os = "macos")] {
+    } else if #[cfg(any(target_os = "macos", target_os = "ios"))] {
         extern crate security_framework;
 
         use std::env;
