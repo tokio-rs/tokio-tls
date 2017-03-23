@@ -33,10 +33,10 @@ cfg_if! {
             assert!(err.contains("CertNotValidForName"), "bad error: {}", err);
         }
     } else if #[cfg(any(feature = "force-openssl",
-                 all(not(target_os = "macos"),
-                     not(target_os = "windows"),
-                     not(target_os = "ios"))))] {
-	    extern crate openssl;
+                        all(not(target_os = "macos"),
+                            not(target_os = "windows"),
+                            not(target_os = "ios"))))] {
+        extern crate openssl;
 
         use openssl::ssl;
         use native_tls::backend::openssl::ErrorExt;
@@ -44,13 +44,13 @@ cfg_if! {
         fn assert_bad_hostname_error(err: &Error) {
             let err = err.get_ref().unwrap();
             let err = err.downcast_ref::<native_tls::Error>().unwrap();
-			let errs = match *err.openssl_error() {
-				ssl::Error::Ssl(ref v) => v,
-				ref e => panic!("not an ssl eror: {:?}", e),
-			};
-			assert!(errs.errors().iter().any(|e| {
-				e.reason() == Some("certificate verify failed")
-			}), "bad errors: {:?}", errs);
+            let errs = match *err.openssl_error() {
+                ssl::Error::Ssl(ref v) => v,
+                ref e => panic!("not an ssl eror: {:?}", e),
+            };
+            assert!(errs.errors().iter().any(|e| {
+                e.reason() == Some("certificate verify failed")
+            }), "bad errors: {:?}", errs);
         }
     } else if #[cfg(any(target_os = "macos", target_os = "ios"))] {
         use native_tls::backend::security_framework::ErrorExt;
@@ -95,16 +95,13 @@ fn fetch_google() {
     // Send off the request by first negotiating an SSL handshake, then writing
     // of our request, then flushing, then finally read off the response.
     let data = client.and_then(move |socket| {
-        let builder = t!(TlsConnector::builder());
-        let connector = t!(builder.build());
-        connector.connect_async("google.com", socket).map_err(native2io)
-    }).and_then(|socket| {
-        write_all(socket, b"GET / HTTP/1.0\r\n\r\n")
-    }).and_then(|(socket, _)| {
-        flush(socket)
-    }).and_then(|socket| {
-        read_to_end(socket, Vec::new())
-    });
+                                   let builder = t!(TlsConnector::builder());
+                                   let connector = t!(builder.build());
+                                   connector.connect_async("google.com", socket).map_err(native2io)
+                               })
+        .and_then(|socket| write_all(socket, b"GET / HTTP/1.0\r\n\r\n"))
+        .and_then(|(socket, _)| flush(socket))
+        .and_then(|socket| read_to_end(socket, Vec::new()));
 
     let (_, data) = t!(l.run(data));
 
@@ -127,10 +124,11 @@ fn wrong_hostname_error() {
     let mut l = t!(Core::new());
     let client = TcpStream::connect(&addr, &l.handle());
     let data = client.and_then(move |socket| {
-        let builder = t!(TlsConnector::builder());
-        let connector = t!(builder.build());
-        connector.connect_async("rust-lang.org", socket).map_err(native2io)
-    });
+                                   let builder = t!(TlsConnector::builder());
+                                   let connector = t!(builder.build());
+                                   connector.connect_async("rust-lang.org", socket)
+                                       .map_err(native2io)
+                               });
 
     let res = l.run(data);
     assert!(res.is_err());
