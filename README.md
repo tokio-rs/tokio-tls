@@ -7,6 +7,7 @@ crate]
 [![Build status](https://ci.appveyor.com/api/projects/status/iiut5d2mts6bt5g1?svg=true)](https://ci.appveyor.com/project/alexcrichton/tokio-tls)
 
 [Documentation](https://docs.rs/tokio-tls)
+
 [`native-tls` crate]: https://github.com/sfackler/rust-native-tls
 
 ## Usage
