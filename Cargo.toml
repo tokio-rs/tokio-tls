@@ -17,6 +17,9 @@ categories = ["asynchronous", "network-programming"]
 travis-ci = { repository = "tokio-rs/tokio-tls" }
 appveyor = { repository = "alexcrichton/tokio-tls" }
 
+[features]
+tokio-proto = ["tokio-proto"]
+
 [dependencies]
 futures = "0.1.11"
 native-tls = "0.1"
