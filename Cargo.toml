@@ -27,7 +27,6 @@ tokio-proto = { version = "0.1", optional = true }
 [dev-dependencies]
 cfg-if = "0.1"
 env_logger = { version = "0.3", default-features = false }
-futures-cpupool = "0.1"
 hyper = "0.11"
 tokio-service = "0.1"
 

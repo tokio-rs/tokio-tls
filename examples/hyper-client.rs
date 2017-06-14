@@ -5,9 +5,10 @@
 //!     cargo run --example hyper-client
 //!
 //! and on stdout you should see rust-lang.org's headers and web page.
+//!
+//! Note that there's also the `hyper-tls` crate which may be useful.
 
 extern crate futures;
-extern crate futures_cpupool;
 extern crate hyper;
 extern crate native_tls;
 extern crate tokio_core;
@@ -15,16 +16,15 @@ extern crate tokio_service;
 extern crate tokio_tls;
 
 use std::io;
-use std::net::{IpAddr, SocketAddr, ToSocketAddrs};
 use std::sync::Arc;
 
-use futures::future::{err, ok, Future};
+use futures::future::{err, Future};
 use futures::stream::Stream;
-use futures_cpupool::CpuPool;
+use hyper::client::HttpConnector;
 use hyper::{Client, Request, Method, Uri};
 use native_tls::TlsConnector;
 use tokio_core::net::TcpStream;
-use tokio_core::reactor::{Core, Handle};
+use tokio_core::reactor::Core;
 use tokio_service::Service;
 use tokio_tls::{TlsConnectorExt, TlsStream};
 
@@ -32,13 +32,14 @@ fn main() {
     let mut core = Core::new().unwrap();
 
     // Create a custom "connector" for Hyper which will route connections
-    // through the `TlsConnector` we create here.
+    // through the `TlsConnector` we create here after routing them through
+    // `HttpConnector` first.
     let tls_cx = TlsConnector::builder().unwrap().build().unwrap();
-    let connector = Https {
-        tls_connector: Arc::new(tls_cx),
-        dns_pool: CpuPool::new(1),
-        handle: core.handle(),
+    let mut connector = HttpsConnector {
+        tls: Arc::new(tls_cx),
+        http: HttpConnector::new(2, &core.handle()),
     };
+    connector.http.enforce_http(false);
     let client = Client::configure()
                     .connector(connector)
                     .build(&core.handle());
@@ -58,13 +59,12 @@ fn main() {
     println!("{}", String::from_utf8_lossy(&body));
 }
 
-struct Https {
-    tls_connector: Arc<TlsConnector>,
-    dns_pool: CpuPool,
-    handle: Handle,
+struct HttpsConnector {
+    tls: Arc<TlsConnector>,
+    http: HttpConnector,
 }
 
-impl Service for Https {
+impl Service for HttpsConnector {
     type Request = Uri;
     type Response = TlsStream<TcpStream>;
     type Error = io::Error;
@@ -80,53 +80,21 @@ impl Service for Https {
                                       "only works with https")).boxed()
         }
 
-        // Figure out what address we're connecting to. We parse out the
-        // host of the URI along with the port. If the host doesn't look
-        // like an IP address then we fall back to blocking DNS resolution
-        // on our thread pool. You could imagine plugging in a truly
-        // asynchronous resolver here as well.
-        //
-        // Eventually though at the end we're doing all this to resolve to
-        // a `SocketAddr` instance to create a TCP connection to.
+        // Look up the host that we're connecting to as we're going to validate
+        // this as part of the TLS handshake.
         let host = match uri.host() {
-            Some(s) => s,
+            Some(s) => s.to_string(),
             None =>  {
                 return err(io::Error::new(io::ErrorKind::Other,
                                           "missing host")).boxed()
             }
         };
-        let port = uri.port().unwrap_or(443);
-        let addr = match host.parse::<IpAddr>() {
-            Ok(addr) => Box::new(ok(addr)) as Box<Future<Item=_, Error=_>>,
-            Err(_) => {
-                let host = host.to_string();
-                Box::new(self.dns_pool.spawn_fn(move || {
-                    let host = format!("{}:443", host);
-                    host.to_socket_addrs()?
-                        .next()
-                        .map(|addr| addr.ip())
-                        .ok_or_else(|| {
-                            io::Error::new(io::ErrorKind::Other,
-                                           "failed to resolve to an addr")
-                        })
-                }))
-            }
-        };
-        let addr = addr.map(move |addr| SocketAddr::new(addr, port));
 
-        // Given our `SocketAddr` we computed above, issue a TCP connection
-        // and wait for the client to get connected.
-        let handle = self.handle.clone();
-        let tcp = addr.and_then(move |addr| {
-            TcpStream::connect(&addr, &handle)
-        });
-
-        // And now finally, once we've connected a TCP socket, perform the
-        // TLS handshake over the socket. This uses the `connect_async`
-        // method to perform the TLS handshake.
-        let host = host.to_string();
-        let tls_cx = self.tls_connector.clone();
-        Box::new(tcp.and_then(move |tcp| {
+        // Delegate to the standard `HttpConnector` type to create a connected
+        // TCP socket. Once we've got that socket initiate the TLS handshake
+        // with the host name that's provided in the URI we extracted above.
+        let tls_cx = self.tls.clone();
+        Box::new(self.http.call(uri).and_then(move |tcp| {
             tls_cx.connect_async(&host, tcp)
                 .map_err(|e| io::Error::new(io::ErrorKind::Other, e))
         }))
