@@ -64,7 +64,7 @@ struct MidHandshake<S> {
 }
 
 /// Extension trait for the `TlsConnector` type in the `native_tls` crate.
-pub trait TlsConnectorExt {
+pub trait TlsConnectorExt: sealed::Sealed {
     /// Connects the provided stream with this connector, assuming the provided
     /// domain.
     ///
@@ -109,7 +109,7 @@ pub trait TlsConnectorExt {
 }
 
 /// Extension trait for the `TlsAcceptor` type in the `native_tls` crate.
-pub trait TlsAcceptorExt {
+pub trait TlsAcceptorExt: sealed::Sealed {
     /// Accepts a new client connection with the provided stream.
     ///
     /// This function will internally call `TlsAcceptor::accept` to connect
@@ -129,6 +129,10 @@ pub trait TlsAcceptorExt {
     /// properly.
     fn accept_async<S>(&self, stream: S) -> AcceptAsync<S>
         where S: Read + Write; // TODO: change to AsyncRead + AsyncWrite
+}
+
+mod sealed {
+    pub trait Sealed {}
 }
 
 impl<S> TlsStream<S> {
@@ -198,6 +202,8 @@ impl TlsConnectorExt for TlsConnector {
     }
 }
 
+impl sealed::Sealed for TlsConnector {}
+
 impl TlsAcceptorExt for TlsAcceptor {
     fn accept_async<S>(&self, stream: S) -> AcceptAsync<S>
         where S: Read + Write,
@@ -209,6 +215,8 @@ impl TlsAcceptorExt for TlsAcceptor {
         }
     }
 }
+
+impl sealed::Sealed for TlsAcceptor {}
 
 // TODO: change this to AsyncRead/AsyncWrite on next major version
 impl<S: Read + Write> Future for ConnectAsync<S> {
