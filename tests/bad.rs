@@ -90,13 +90,14 @@ cfg_if! {
         extern crate winapi;
 
         use native_tls::backend::schannel::ErrorExt;
+        use winapi::shared::winerror::*;
 
         fn assert_expired_error(err: &Error) {
             let err = err.get_ref().unwrap();
             let err = err.downcast_ref::<native_tls::Error>().unwrap();
             let err = err.schannel_error();
             let code = err.raw_os_error().unwrap();
-            assert_eq!(code as usize, winapi::CERT_E_EXPIRED as usize);
+            assert_eq!(code as usize, CERT_E_EXPIRED as usize);
         }
 
         fn assert_wrong_host(err: &Error) {
@@ -105,8 +106,8 @@ cfg_if! {
             let err = err.schannel_error();
             let code = err.raw_os_error().unwrap() as usize;
             // TODO: this... may be a bug in schannel-rs
-            assert!(code == winapi::CERT_E_CN_NO_MATCH as usize ||
-                    code == winapi::SEC_E_MESSAGE_ALTERED as usize,
+            assert!(code == CERT_E_CN_NO_MATCH as usize ||
+                    code == SEC_E_MESSAGE_ALTERED as usize,
                     "bad error code: {:x}", code);
         }
 
@@ -115,7 +116,7 @@ cfg_if! {
             let err = err.downcast_ref::<native_tls::Error>().unwrap();
             let err = err.schannel_error();
             let code = err.raw_os_error().unwrap();
-            assert_eq!(code as usize, winapi::CERT_E_UNTRUSTEDROOT as usize);
+            assert_eq!(code as usize, CERT_E_UNTRUSTEDROOT as usize);
         }
 
         fn assert_untrusted_root(err: &Error) {
@@ -123,7 +124,7 @@ cfg_if! {
             let err = err.downcast_ref::<native_tls::Error>().unwrap();
             let err = err.schannel_error();
             let code = err.raw_os_error().unwrap();
-            assert_eq!(code as usize, winapi::CERT_E_UNTRUSTEDROOT as usize);
+            assert_eq!(code as usize, CERT_E_UNTRUSTEDROOT as usize);
         }
     }
 }

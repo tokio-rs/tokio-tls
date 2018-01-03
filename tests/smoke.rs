@@ -273,11 +273,8 @@ cfg_if! {
             (t!(srv.build()), t!(client.build()))
         }
     } else {
-        extern crate advapi32;
-        extern crate crypt32;
         extern crate schannel;
         extern crate winapi;
-        extern crate kernel32;
 
         use std::env;
         use std::fs::File;
@@ -288,6 +285,14 @@ cfg_if! {
 
         use schannel::cert_context::CertContext;
         use schannel::cert_store::{CertStore, CertAdd, Memory};
+        use winapi::shared::basetsd::*;
+        use winapi::shared::lmcons::*;
+        use winapi::shared::minwindef::*;
+        use winapi::shared::ntdef::WCHAR;
+        use winapi::um::minwinbase::*;
+        use winapi::um::sysinfoapi::*;
+        use winapi::um::timezoneapi::*;
+        use winapi::um::wincrypt::*;
 
         const FRIENDLY_NAME: &'static str = "tokio-tls localhost testing cert";
 
@@ -378,29 +383,29 @@ description should mention "tokio-tls".
                 let mut buffer = "tokio-tls test suite".encode_utf16()
                                                          .chain(Some(0))
                                                          .collect::<Vec<_>>();
-                let res = advapi32::CryptAcquireContextW(&mut provider,
-                                                         buffer.as_ptr(),
-                                                         ptr::null_mut(),
-                                                         winapi::PROV_RSA_FULL,
-                                                         winapi::CRYPT_MACHINE_KEYSET);
-                if res != winapi::TRUE {
+                let res = CryptAcquireContextW(&mut provider,
+                                               buffer.as_ptr(),
+                                               ptr::null_mut(),
+                                               PROV_RSA_FULL,
+                                               CRYPT_MACHINE_KEYSET);
+                if res != TRUE {
                     // create a new key container (since it does not exist)
-                    let res = advapi32::CryptAcquireContextW(&mut provider,
-                                                             buffer.as_ptr(),
-                                                             ptr::null_mut(),
-                                                             winapi::PROV_RSA_FULL,
-                                                             winapi::CRYPT_NEWKEYSET | winapi::CRYPT_MACHINE_KEYSET);
-                    if res != winapi::TRUE {
+                    let res = CryptAcquireContextW(&mut provider,
+                                                   buffer.as_ptr(),
+                                                   ptr::null_mut(),
+                                                   PROV_RSA_FULL,
+                                                   CRYPT_NEWKEYSET | CRYPT_MACHINE_KEYSET);
+                    if res != TRUE {
                         return Err(Error::last_os_error())
                     }
                 }
 
                 // create a new keypair (RSA-2048)
-                let res = advapi32::CryptGenKey(provider,
-                                                winapi::AT_SIGNATURE,
-                                                0x0800<<16 | winapi::CRYPT_EXPORTABLE,
-                                                &mut hkey);
-                if res != winapi::TRUE {
+                let res = CryptGenKey(provider,
+                                      AT_SIGNATURE,
+                                      0x0800<<16 | CRYPT_EXPORTABLE,
+                                      &mut hkey);
+                if res != TRUE {
                     return Err(Error::last_os_error());
                 }
 
@@ -409,42 +414,42 @@ description should mention "tokio-tls".
                             G=tokio_tls".encode_utf16()
                                           .chain(Some(0))
                                           .collect::<Vec<_>>();
-                let mut cname_buffer: [winapi::WCHAR; winapi::UNLEN as usize + 1] = mem::zeroed();
-                let mut cname_len = cname_buffer.len() as winapi::DWORD;
-                let res = crypt32::CertStrToNameW(winapi::X509_ASN_ENCODING,
-                                                  name.as_ptr(),
-                                                  winapi::CERT_X500_NAME_STR,
-                                                  ptr::null_mut(),
-                                                  cname_buffer.as_mut_ptr() as *mut u8,
-                                                  &mut cname_len,
-                                                  ptr::null_mut());
-                if res != winapi::TRUE {
+                let mut cname_buffer: [WCHAR; UNLEN as usize + 1] = mem::zeroed();
+                let mut cname_len = cname_buffer.len() as DWORD;
+                let res = CertStrToNameW(X509_ASN_ENCODING,
+                                         name.as_ptr(),
+                                         CERT_X500_NAME_STR,
+                                         ptr::null_mut(),
+                                         cname_buffer.as_mut_ptr() as *mut u8,
+                                         &mut cname_len,
+                                         ptr::null_mut());
+                if res != TRUE {
                     return Err(Error::last_os_error());
                 }
 
-                let mut subject_issuer = winapi::CERT_NAME_BLOB {
+                let mut subject_issuer = CERT_NAME_BLOB {
                     cbData: cname_len,
                     pbData: cname_buffer.as_ptr() as *mut u8,
                 };
-                let mut key_provider = winapi::CRYPT_KEY_PROV_INFO {
+                let mut key_provider = CRYPT_KEY_PROV_INFO {
                     pwszContainerName: buffer.as_mut_ptr(),
                     pwszProvName: ptr::null_mut(),
-                    dwProvType: winapi::PROV_RSA_FULL,
-                    dwFlags: winapi::CRYPT_MACHINE_KEYSET,
+                    dwProvType: PROV_RSA_FULL,
+                    dwFlags: CRYPT_MACHINE_KEYSET,
                     cProvParam: 0,
                     rgProvParam: ptr::null_mut(),
-                    dwKeySpec: winapi::AT_SIGNATURE,
+                    dwKeySpec: AT_SIGNATURE,
                 };
-                let mut sig_algorithm = winapi::CRYPT_ALGORITHM_IDENTIFIER {
-                    pszObjId: winapi::szOID_RSA_SHA256RSA.as_ptr() as *mut _,
+                let mut sig_algorithm = CRYPT_ALGORITHM_IDENTIFIER {
+                    pszObjId: szOID_RSA_SHA256RSA.as_ptr() as *mut _,
                     Parameters: mem::zeroed(),
                 };
-                let mut expiration_date: winapi::SYSTEMTIME = mem::zeroed();
-                kernel32::GetSystemTime(&mut expiration_date);
-                let mut file_time: winapi::FILETIME = mem::zeroed();
-                let res = kernel32::SystemTimeToFileTime(&mut expiration_date,
-                                                         &mut file_time);
-                if res != winapi::TRUE {
+                let mut expiration_date: SYSTEMTIME = mem::zeroed();
+                GetSystemTime(&mut expiration_date);
+                let mut file_time: FILETIME = mem::zeroed();
+                let res = SystemTimeToFileTime(&mut expiration_date,
+                                               &mut file_time);
+                if res != TRUE {
                     return Err(Error::last_os_error());
                 }
                 let mut timestamp: u64 = file_time.dwLowDateTime as u64 |
@@ -453,15 +458,15 @@ description should mention "tokio-tls".
                 timestamp += (1E9 as u64) / 100 * (60 * 60 * 24);
                 file_time.dwLowDateTime = timestamp as u32;
                 file_time.dwHighDateTime = (timestamp >> 32) as u32;
-                let res = kernel32::FileTimeToSystemTime(&file_time,
-                                                         &mut expiration_date);
-                if res != winapi::TRUE {
+                let res = FileTimeToSystemTime(&file_time,
+                                               &mut expiration_date);
+                if res != TRUE {
                     return Err(Error::last_os_error());
                 }
 
                 // create a self signed certificate
-                let cert_context = crypt32::CertCreateSelfSignCertificate(
-                        0 as winapi::ULONG_PTR,
+                let cert_context = CertCreateSelfSignCertificate(
+                        0 as ULONG_PTR,
                         &mut subject_issuer,
                         0,
                         &mut key_provider,

@@ -10,7 +10,6 @@ extern crate cfg_if;
 
 use std::io::{self, Error};
 use std::net::ToSocketAddrs;
-use std::str;
 
 use futures::Future;
 use native_tls::TlsConnector;
@@ -65,13 +64,14 @@ cfg_if! {
         extern crate winapi;
 
         use native_tls::backend::schannel::ErrorExt;
+        use winapi::shared::winerror::*;
 
         fn assert_bad_hostname_error(err: &Error) {
             let err = err.get_ref().unwrap();
             let err = err.downcast_ref::<native_tls::Error>().unwrap();
             let err = err.schannel_error();
             let code = err.raw_os_error().unwrap();
-            assert_eq!(code as usize, winapi::CERT_E_CN_NO_MATCH as usize);
+            assert_eq!(code as usize, CERT_E_CN_NO_MATCH as usize);
         }
     }
 }

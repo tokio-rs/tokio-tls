@@ -76,8 +76,8 @@ impl Service for HttpsConnector {
         // some clients resolve to TLS streams (https) and others resolve
         // to normal TCP streams (http)
         if uri.scheme() != Some("https") {
-            return err(io::Error::new(io::ErrorKind::Other,
-                                      "only works with https")).boxed()
+            return Box::new(err(io::Error::new(io::ErrorKind::Other,
+                                      "only works with https")))
         }
 
         // Look up the host that we're connecting to as we're going to validate
@@ -85,8 +85,8 @@ impl Service for HttpsConnector {
         let host = match uri.host() {
             Some(s) => s.to_string(),
             None =>  {
-                return err(io::Error::new(io::ErrorKind::Other,
-                                          "missing host")).boxed()
+                return Box::new(err(io::Error::new(io::ErrorKind::Other,
+                                          "missing host")))
             }
         };
 
