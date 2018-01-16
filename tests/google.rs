@@ -37,15 +37,15 @@ cfg_if! {
                             not(target_os = "ios"))))] {
         extern crate openssl;
 
-        use openssl::ssl;
         use native_tls::backend::openssl::ErrorExt;
 
         fn assert_bad_hostname_error(err: &Error) {
             let err = err.get_ref().unwrap();
             let err = err.downcast_ref::<native_tls::Error>().unwrap();
-            let errs = match *err.openssl_error() {
-                ssl::Error::Ssl(ref v) => v,
-                ref e => panic!("not an ssl eror: {:?}", e),
+            let err = err.openssl_error();
+            let errs = match err.ssl_error() {
+                Some(e) => e,
+                None => panic!("not an ssl eror: {:?}", err),
             };
             assert!(errs.errors().iter().any(|e| {
                 e.reason() == Some("certificate verify failed")
