@@ -244,7 +244,6 @@ cfg_if! {
             });
             let mut client = t!(TlsConnector::builder());
             t!(client.builder_mut()
-                     .builder_mut()
                      .set_ca_file(&path));
 
             (t!(srv.build()), t!(client.build()))

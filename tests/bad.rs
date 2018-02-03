@@ -51,14 +51,14 @@ cfg_if! {
                             not(target_os = "ios"))))] {
         extern crate openssl;
 
-        use openssl::ssl;
         use native_tls::backend::openssl::ErrorExt;
 
         fn get(err: &Error) -> &openssl::error::ErrorStack {
             let err = err.get_ref().unwrap();
-            match *err.downcast_ref::<native_tls::Error>().unwrap().openssl_error() {
-                ssl::Error::Ssl(ref v) => v,
-                ref e => panic!("not an ssl eror: {:?}", e),
+            let err = err.downcast_ref::<native_tls::Error>().unwrap().openssl_error();
+            match err.ssl_error() {
+                Some(e) => e,
+                None => panic!("not an ssl eror: {:?}", err),
             }
         }
 
