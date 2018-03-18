@@ -22,15 +22,15 @@
 extern crate futures;
 extern crate native_tls;
 #[macro_use]
-extern crate tokio_core;
+//extern crate tokio_core;
 extern crate tokio_io;
 
 use std::io::{self, Read, Write};
 
 use futures::{Poll, Future, Async};
 use native_tls::{HandshakeError, Error, TlsConnector, TlsAcceptor};
-#[allow(deprecated)]
-use tokio_core::io::Io;
+//#[allow(deprecated)]
+//use tokio_io::Io;
 use tokio_io::{AsyncRead, AsyncWrite};
 
 pub mod proto;
@@ -85,7 +85,7 @@ pub trait TlsConnectorExt: sealed::Sealed {
     /// and `AsyncWrite` traits as well, otherwise this function will not work
     /// properly.
     fn connect_async<S>(&self, domain: &str, stream: S) -> ConnectAsync<S>
-        where S: Read + Write; // TODO: change to AsyncRead + AsyncWrite
+        where S: AsyncRead + AsyncWrite; // TODO: change to AsyncRead + AsyncWrite
 
     /// Like `connect_async`, but does not validate the server's domain name
     /// against its certificate.
@@ -105,7 +105,7 @@ pub trait TlsConnectorExt: sealed::Sealed {
     /// properly.
     fn danger_connect_async_without_providing_domain_for_certificate_verification_and_server_name_indication<S>(
             &self, stream: S) -> ConnectAsync<S>
-        where S: Read + Write; // TODO: change to AsyncRead + AsyncWrite
+        where S: AsyncRead + AsyncWrite; // TODO: change to AsyncRead + AsyncWrite
 }
 
 /// Extension trait for the `TlsAcceptor` type in the `native_tls` crate.
@@ -128,7 +128,7 @@ pub trait TlsAcceptorExt: sealed::Sealed {
     /// and `AsyncWrite` traits as well, otherwise this function will not work
     /// properly.
     fn accept_async<S>(&self, stream: S) -> AcceptAsync<S>
-        where S: Read + Write; // TODO: change to AsyncRead + AsyncWrite
+        where S: AsyncRead + AsyncWrite; // TODO: change to AsyncRead + AsyncWrite
 }
 
 mod sealed {
@@ -163,10 +163,6 @@ impl<S: Read + Write> Write for TlsStream<S> {
     fn flush(&mut self) -> io::Result<()> {
         self.inner.flush()
     }
-}
-
-#[allow(deprecated)]
-impl<S: Io> Io for TlsStream<S> {
 }
 
 impl<S: AsyncRead + AsyncWrite> AsyncRead for TlsStream<S> {
@@ -219,7 +215,7 @@ impl TlsAcceptorExt for TlsAcceptor {
 impl sealed::Sealed for TlsAcceptor {}
 
 // TODO: change this to AsyncRead/AsyncWrite on next major version
-impl<S: Read + Write> Future for ConnectAsync<S> {
+impl<S: AsyncRead + AsyncWrite> Future for ConnectAsync<S> {
     type Item = TlsStream<S>;
     type Error = Error;
 
@@ -229,7 +225,7 @@ impl<S: Read + Write> Future for ConnectAsync<S> {
 }
 
 // TODO: change this to AsyncRead/AsyncWrite on next major version
-impl<S: Read + Write> Future for AcceptAsync<S> {
+impl<S: AsyncRead + AsyncWrite> Future for AcceptAsync<S> {
     type Item = TlsStream<S>;
     type Error = Error;
 
@@ -239,7 +235,7 @@ impl<S: Read + Write> Future for AcceptAsync<S> {
 }
 
 // TODO: change this to AsyncRead/AsyncWrite on next major version
-impl<S: Read + Write> Future for MidHandshake<S> {
+impl<S: AsyncRead + AsyncWrite> Future for MidHandshake<S> {
     type Item = TlsStream<S>;
     type Error = Error;
 

@@ -409,7 +409,7 @@ impl<T, I> multiplex::ClientProto<I> for Client<T>
 
 impl<T, I> Future for ClientMultiplexBind<T, I>
     where T: multiplex::ClientProto<TlsStream<I>>,
-          I: Read + Write + 'static,
+          I: AsyncRead + AsyncWrite + 'static,
 {
     type Item = T::Transport;
     type Error = io::Error;
@@ -470,7 +470,7 @@ impl<T, I> streaming::pipeline::ClientProto<I> for Client<T>
 
 impl<T, I> Future for ClientStreamingPipelineBind<T, I>
     where T: streaming::pipeline::ClientProto<TlsStream<I>>,
-          I: Read + Write + 'static,
+          I: AsyncRead + AsyncWrite + 'static,
 {
     type Item = T::Transport;
     type Error = io::Error;
@@ -494,14 +494,14 @@ impl<T, I> Future for ClientStreamingPipelineBind<T, I>
 /// Future returned from `bind_transport` in the `ClientProto` implementation.
 pub struct ClientStreamingMultiplexBind<T, I>
     where T: streaming::multiplex::ClientProto<TlsStream<I>>,
-          I: Read + Write + 'static,
+          I: AsyncRead + AsyncWrite + 'static,
 {
     state: ClientStreamingMultiplexState<T, I>,
 }
 
 enum ClientStreamingMultiplexState<T, I>
     where T: streaming::multiplex::ClientProto<TlsStream<I>>,
-          I: Read + Write + 'static,
+          I: AsyncRead + AsyncWrite + 'static,
 {
     First(ConnectAsync<I>, Arc<T>),
     Next(<T::BindTransport as IntoFuture>::Future),
@@ -509,7 +509,7 @@ enum ClientStreamingMultiplexState<T, I>
 
 impl<T, I> streaming::multiplex::ClientProto<I> for Client<T>
     where T: streaming::multiplex::ClientProto<TlsStream<I>>,
-          I: Read + Write + 'static,
+          I: AsyncRead + AsyncWrite + 'static,
 {
     type Request = T::Request;
     type RequestBody = T::RequestBody;
@@ -531,7 +531,7 @@ impl<T, I> streaming::multiplex::ClientProto<I> for Client<T>
 
 impl<T, I> Future for ClientStreamingMultiplexBind<T, I>
     where T: streaming::multiplex::ClientProto<TlsStream<I>>,
-          I: Read + Write + 'static,
+          I: AsyncRead + AsyncWrite + 'static,
 {
     type Item = T::Transport;
     type Error = io::Error;
