@@ -24,7 +24,6 @@ tokio-proto = { version = "0.1", optional = true }
 
 [dependencies.tokio-io]
 git = "https://github.com/tokio-rs/tokio"
-features = ["unstable-futures"]
 
 [dev-dependencies]
 cfg-if = "0.1"
@@ -32,8 +31,7 @@ env_logger = { version = "0.4", default-features = false }
 tokio-service = "0.1"
 
 [dev-dependencies.hyper]
-git = "https://github.com/enzious/hyper"
-branch = "0.12.x"
+git = "https://github.com/hyperium/hyper"
 
 [target.'cfg(all(not(target_os = "macos"), not(windows), not(target_os = "ios")))'.dev-dependencies]
 openssl = "0.9"
