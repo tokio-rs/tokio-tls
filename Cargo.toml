@@ -23,7 +23,7 @@ native-tls = "0.1"
 tokio-proto = { version = "0.1", optional = true }
 
 [dependencies.tokio-io]
-git = "https://github.com/tokio-rs/tokio"
+version = "0.1.6"
 
 [dev-dependencies]
 cfg-if = "0.1"
