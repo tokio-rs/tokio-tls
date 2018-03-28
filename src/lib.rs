@@ -43,7 +43,7 @@ pub mod proto;
 /// data. Bytes read from a `TlsStream` are decrypted from `S` and bytes written
 /// to a `TlsStream` are encrypted when passing through to `S`.
 #[derive(Debug)]
-pub struct TlsStream<S> {
+pub struct TlsStream<S> where S: Send {
     inner: native_tls::TlsStream<S>,
 }
 
@@ -85,7 +85,7 @@ pub trait TlsConnectorExt: sealed::Sealed {
     /// and `AsyncWrite` traits as well, otherwise this function will not work
     /// properly.
     fn connect_async<S>(&self, domain: &str, stream: S) -> ConnectAsync<S>
-        where S: AsyncRead + AsyncWrite; // TODO: change to AsyncRead + AsyncWrite
+        where S: AsyncRead + AsyncWrite + Send; // TODO: change to AsyncRead + AsyncWrite
 
     /// Like `connect_async`, but does not validate the server's domain name
     /// against its certificate.
@@ -105,7 +105,7 @@ pub trait TlsConnectorExt: sealed::Sealed {
     /// properly.
     fn danger_connect_async_without_providing_domain_for_certificate_verification_and_server_name_indication<S>(
             &self, stream: S) -> ConnectAsync<S>
-        where S: AsyncRead + AsyncWrite; // TODO: change to AsyncRead + AsyncWrite
+        where S: AsyncRead + AsyncWrite + Send; // TODO: change to AsyncRead + AsyncWrite
 }
 
 /// Extension trait for the `TlsAcceptor` type in the `native_tls` crate.
@@ -128,14 +128,14 @@ pub trait TlsAcceptorExt: sealed::Sealed {
     /// and `AsyncWrite` traits as well, otherwise this function will not work
     /// properly.
     fn accept_async<S>(&self, stream: S) -> AcceptAsync<S>
-        where S: AsyncRead + AsyncWrite; // TODO: change to AsyncRead + AsyncWrite
+        where S: AsyncRead + AsyncWrite + Send; // TODO: change to AsyncRead + AsyncWrite
 }
 
 mod sealed {
     pub trait Sealed {}
 }
 
-impl<S> TlsStream<S> {
+impl<S: Send> TlsStream<S> {
     /// Get access to the internal `native_tls::TlsStream` stream which also
     /// transitively allows access to `S`.
     pub fn get_ref(&self) -> &native_tls::TlsStream<S> {
@@ -149,13 +149,13 @@ impl<S> TlsStream<S> {
     }
 }
 
-impl<S: Read + Write> Read for TlsStream<S> {
+impl<S: Read + Write + Send> Read for TlsStream<S> {
     fn read(&mut self, buf: &mut [u8]) -> io::Result<usize> {
         self.inner.read(buf)
     }
 }
 
-impl<S: Read + Write> Write for TlsStream<S> {
+impl<S: Read + Write + Send> Write for TlsStream<S> {
     fn write(&mut self, buf: &[u8]) -> io::Result<usize> {
         self.inner.write(buf)
     }
@@ -165,10 +165,10 @@ impl<S: Read + Write> Write for TlsStream<S> {
     }
 }
 
-impl<S: AsyncRead + AsyncWrite> AsyncRead for TlsStream<S> {
+impl<S: AsyncRead + AsyncWrite + Send> AsyncRead for TlsStream<S> {
 }
 
-impl<S: AsyncRead + AsyncWrite> AsyncWrite for TlsStream<S> {
+impl<S: AsyncRead + AsyncWrite + Send> AsyncWrite for TlsStream<S> {
     fn shutdown(&mut self) -> Poll<(), io::Error> {
         try_nb!(self.inner.shutdown());
         self.inner.get_mut().shutdown()
@@ -177,7 +177,7 @@ impl<S: AsyncRead + AsyncWrite> AsyncWrite for TlsStream<S> {
 
 impl TlsConnectorExt for TlsConnector {
     fn connect_async<S>(&self, domain: &str, stream: S) -> ConnectAsync<S>
-        where S: AsyncRead + AsyncWrite,
+        where S: AsyncRead + AsyncWrite + Send,
     {
         ConnectAsync {
             inner: MidHandshake {
@@ -188,7 +188,7 @@ impl TlsConnectorExt for TlsConnector {
 
     fn danger_connect_async_without_providing_domain_for_certificate_verification_and_server_name_indication<S>(
             &self, stream: S) -> ConnectAsync<S>
-        where S: AsyncRead + AsyncWrite,
+        where S: AsyncRead + AsyncWrite + Send,
     {
         ConnectAsync {
             inner: MidHandshake {
@@ -202,7 +202,7 @@ impl sealed::Sealed for TlsConnector {}
 
 impl TlsAcceptorExt for TlsAcceptor {
     fn accept_async<S>(&self, stream: S) -> AcceptAsync<S>
-        where S: AsyncRead + AsyncWrite,
+        where S: AsyncRead + AsyncWrite + Send,
     {
         AcceptAsync {
             inner: MidHandshake {
@@ -215,7 +215,7 @@ impl TlsAcceptorExt for TlsAcceptor {
 impl sealed::Sealed for TlsAcceptor {}
 
 // TODO: change this to AsyncRead/AsyncWrite on next major version
-impl<S: AsyncRead + AsyncWrite> Future for ConnectAsync<S> {
+impl<S: AsyncRead + AsyncWrite + Send> Future for ConnectAsync<S> {
     type Item = TlsStream<S>;
     type Error = Error;
 
@@ -225,7 +225,7 @@ impl<S: AsyncRead + AsyncWrite> Future for ConnectAsync<S> {
 }
 
 // TODO: change this to AsyncRead/AsyncWrite on next major version
-impl<S: AsyncRead + AsyncWrite> Future for AcceptAsync<S> {
+impl<S: AsyncRead + AsyncWrite + Send> Future for AcceptAsync<S> {
     type Item = TlsStream<S>;
     type Error = Error;
 
@@ -235,7 +235,7 @@ impl<S: AsyncRead + AsyncWrite> Future for AcceptAsync<S> {
 }
 
 // TODO: change this to AsyncRead/AsyncWrite on next major version
-impl<S: AsyncRead + AsyncWrite> Future for MidHandshake<S> {
+impl<S: AsyncRead + AsyncWrite + Send> Future for MidHandshake<S> {
     type Item = TlsStream<S>;
     type Error = Error;
 
