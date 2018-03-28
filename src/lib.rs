@@ -177,7 +177,7 @@ impl<S: AsyncRead + AsyncWrite> AsyncWrite for TlsStream<S> {
 
 impl TlsConnectorExt for TlsConnector {
     fn connect_async<S>(&self, domain: &str, stream: S) -> ConnectAsync<S>
-        where S: Read + Write,
+        where S: AsyncRead + AsyncWrite,
     {
         ConnectAsync {
             inner: MidHandshake {
@@ -188,7 +188,7 @@ impl TlsConnectorExt for TlsConnector {
 
     fn danger_connect_async_without_providing_domain_for_certificate_verification_and_server_name_indication<S>(
             &self, stream: S) -> ConnectAsync<S>
-        where S: Read + Write,
+        where S: AsyncRead + AsyncWrite,
     {
         ConnectAsync {
             inner: MidHandshake {
@@ -202,7 +202,7 @@ impl sealed::Sealed for TlsConnector {}
 
 impl TlsAcceptorExt for TlsAcceptor {
     fn accept_async<S>(&self, stream: S) -> AcceptAsync<S>
-        where S: Read + Write,
+        where S: AsyncRead + AsyncWrite,
     {
         AcceptAsync {
             inner: MidHandshake {
