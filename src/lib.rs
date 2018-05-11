@@ -22,15 +22,12 @@
 extern crate futures;
 extern crate native_tls;
 #[macro_use]
-extern crate tokio_core;
 extern crate tokio_io;
 
 use std::io::{self, Read, Write};
 
 use futures::{Poll, Future, Async};
 use native_tls::{HandshakeError, Error, TlsConnector, TlsAcceptor};
-#[allow(deprecated)]
-use tokio_core::io::Io;
 use tokio_io::{AsyncRead, AsyncWrite};
 
 pub mod proto;
@@ -163,10 +160,6 @@ impl<S: Read + Write> Write for TlsStream<S> {
     fn flush(&mut self) -> io::Result<()> {
         self.inner.flush()
     }
-}
-
-#[allow(deprecated)]
-impl<S: Io> Io for TlsStream<S> {
 }
 
 impl<S: AsyncRead + AsyncWrite> AsyncRead for TlsStream<S> {
