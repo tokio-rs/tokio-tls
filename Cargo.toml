@@ -20,15 +20,19 @@ appveyor = { repository = "alexcrichton/tokio-tls" }
 [dependencies]
 futures = "0.1.11"
 native-tls = "0.1"
-tokio-core = "0.1.6"
-tokio-io = "0.1"
 tokio-proto = { version = "0.1", optional = true }
+tokio = "0.1.4"
+
+[dependencies.tokio-io]
+version = "0.1.6"
 
 [dev-dependencies]
 cfg-if = "0.1"
 env_logger = { version = "0.4", default-features = false }
-hyper = "0.11"
 tokio-service = "0.1"
+
+[dev-dependencies.hyper]
+git = "https://github.com/hyperium/hyper"
 
 [target.'cfg(all(not(target_os = "macos"), not(windows), not(target_os = "ios")))'.dev-dependencies]
 openssl = "0.9"
