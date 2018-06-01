@@ -1,7 +1,7 @@
 extern crate env_logger;
 extern crate futures;
 extern crate native_tls;
-extern crate tokio_core;
+extern crate tokio;
 extern crate tokio_io;
 extern crate tokio_tls;
 
@@ -15,8 +15,7 @@ use futures::{Future, Poll};
 use futures::stream::Stream;
 use tokio_io::{AsyncRead, AsyncWrite};
 use tokio_io::io::{read_to_end, copy, shutdown};
-use tokio_core::reactor::Core;
-use tokio_core::net::{TcpListener, TcpStream};
+use tokio::net::{TcpListener, TcpStream};
 use tokio_tls::{TlsConnectorExt, TlsAcceptorExt};
 use native_tls::{TlsConnector, TlsAcceptor, Pkcs12};
 
@@ -244,7 +243,6 @@ cfg_if! {
             });
             let mut client = t!(TlsConnector::builder());
             t!(client.builder_mut()
-                     .builder_mut()
                      .set_ca_file(&path));
 
             (t!(srv.build()), t!(client.build()))
@@ -521,10 +519,9 @@ const AMT: u64 = 128 * 1024;
 #[test]
 fn client_to_server() {
     drop(env_logger::init());
-    let mut l = t!(Core::new());
 
     // Create a server listening on a port, then figure out what that port is
-    let srv = t!(TcpListener::bind(&t!("127.0.0.1:0".parse()), &l.handle()));
+    let srv = t!(TcpListener::bind(&t!("127.0.0.1:0".parse())));
     let addr = t!(srv.local_addr());
 
     let (server_cx, client_cx) = contexts();
@@ -533,7 +530,7 @@ fn client_to_server() {
     // read all the data from it.
     let socket = srv.incoming().take(1).collect();
     let received = socket.map(|mut socket| {
-        socket.remove(0).0
+        socket.remove(0)
     }).and_then(move |socket| {
         server_cx.accept_async(socket).map_err(native2io)
     }).and_then(|socket| {
@@ -542,7 +539,7 @@ fn client_to_server() {
 
     // Create a future to connect to our server, connect the ssl stream, and
     // then write a bunch of data to it.
-    let client = TcpStream::connect(&addr, &l.handle());
+    let client = TcpStream::connect(&addr);
     let sent = client.and_then(move |socket| {
         client_cx.connect_async("localhost", socket).map_err(native2io)
     }).and_then(|socket| {
@@ -552,25 +549,32 @@ fn client_to_server() {
     });
 
     // Finally, run everything!
-    let (amt, (_, data)) = t!(l.run(sent.join(received)));
-    assert_eq!(amt, AMT);
-    assert!(data == vec![9; amt as usize]);
+    tokio::run(
+        sent.join(received)
+            .then(|res| {
+                assert!(res.is_ok());
+                let (amt, (_, data)) = res.unwrap();
+                assert_eq!(amt, AMT);
+                assert!(data == vec![9; amt as usize]);
+                Ok(())
+            })
+    );
+
 }
 
 #[test]
 fn server_to_client() {
     drop(env_logger::init());
-    let mut l = t!(Core::new());
 
     // Create a server listening on a port, then figure out what that port is
-    let srv = t!(TcpListener::bind(&t!("127.0.0.1:0".parse()), &l.handle()));
+    let srv = t!(TcpListener::bind(&t!("127.0.0.1:0".parse())));
     let addr = t!(srv.local_addr());
 
     let (server_cx, client_cx) = contexts();
 
     let socket = srv.incoming().take(1).collect();
     let sent = socket.map(|mut socket| {
-        socket.remove(0).0
+        socket.remove(0)
     }).and_then(move |socket| {
         server_cx.accept_async(socket).map_err(native2io)
     }).and_then(|socket| {
@@ -579,7 +583,7 @@ fn server_to_client() {
         shutdown(socket).map(move |_| amt)
     });
 
-    let client = TcpStream::connect(&addr, &l.handle());
+    let client = TcpStream::connect(&addr);
     let received = client.and_then(move |socket| {
         client_cx.connect_async("localhost", socket).map_err(native2io)
     }).and_then(|socket| {
@@ -587,9 +591,17 @@ fn server_to_client() {
     });
 
     // Finally, run everything!
-    let (amt, (_, data)) = t!(l.run(sent.join(received)));
-    assert_eq!(amt, AMT);
-    assert!(data == vec![9; amt as usize]);
+    tokio::run(
+        sent.join(received)
+            .then(|res| {
+                assert!(res.is_ok());
+                let (amt, (_, data)) = res.unwrap();
+                assert_eq!(amt, AMT);
+                assert!(data == vec![9; amt as usize]);
+                Ok(())
+            })
+    );
+
 }
 
 struct OneByte<S> {
@@ -623,16 +635,15 @@ impl<S: AsyncWrite> AsyncWrite for OneByte<S> {
 fn one_byte_at_a_time() {
     const AMT: u64 = 1024;
     drop(env_logger::init());
-    let mut l = t!(Core::new());
 
-    let srv = t!(TcpListener::bind(&t!("127.0.0.1:0".parse()), &l.handle()));
+    let srv = t!(TcpListener::bind(&t!("127.0.0.1:0".parse())));
     let addr = t!(srv.local_addr());
 
     let (server_cx, client_cx) = contexts();
 
     let socket = srv.incoming().take(1).collect();
     let sent = socket.map(|mut socket| {
-        socket.remove(0).0
+        socket.remove(0)
     }).and_then(move |socket| {
         server_cx.accept_async(OneByte { inner: socket }).map_err(native2io)
     }).and_then(|socket| {
@@ -641,7 +652,7 @@ fn one_byte_at_a_time() {
         shutdown(socket).map(move |_| amt)
     });
 
-    let client = TcpStream::connect(&addr, &l.handle());
+    let client = TcpStream::connect(&addr);
     let received = client.and_then(move |socket| {
         let socket = OneByte { inner: socket };
         client_cx.connect_async("localhost", socket).map_err(native2io)
@@ -649,7 +660,15 @@ fn one_byte_at_a_time() {
         read_to_end(socket, Vec::new())
     });
 
-    let (amt, (_, data)) = t!(l.run(sent.join(received)));
-    assert_eq!(amt, AMT);
-    assert!(data == vec![9; amt as usize]);
+    tokio::run(
+        sent.join(received)
+            .then(|res| {
+                assert!(res.is_ok());
+                let (amt, (_, data)) = res.unwrap();
+                assert_eq!(amt, AMT);
+                assert!(data == vec![9; amt as usize]);
+                Ok(())
+            })
+    );
+
 }

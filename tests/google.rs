@@ -89,7 +89,6 @@ fn fetch_google() {
     // Create an event loop and connect a socket to our resolved address.c
     let client = TcpStream::connect(&addr);
 
-
     // Send off the request by first negotiating an SSL handshake, then writing
     // of our request, then flushing, then finally read off the response.
     let data = client.and_then(move |socket| {
@@ -101,15 +100,19 @@ fn fetch_google() {
         .and_then(|(socket, _)| flush(socket))
         .and_then(|socket| read_to_end(socket, Vec::new()));
 
-    //let (_, data) = t!(l.run(data));
-    tokio::run(data.map(|_| ()).map_err(|_| ()));
-
     // any response code is fine
-    assert!(data.starts_with(b"HTTP/1.0 "));
+    tokio::run(
+        data.then(|res| {
+            assert!(res.is_ok());
+            let data = res.unwrap().1;
+            assert!(data.starts_with(b"HTTP/1.0 "));
+            let data = String::from_utf8_lossy(&data);
+            let data = data.trim_right();
+            assert!(data.ends_with("</html>") || data.ends_with("</HTML>"));
+            Ok(())
+        })
+    );
 
-    let data = String::from_utf8_lossy(&data);
-    let data = data.trim_right();
-    assert!(data.ends_with("</html>") || data.ends_with("</HTML>"));
 }
 
 // see comment in bad.rs for ignore reason
@@ -120,7 +123,6 @@ fn wrong_hostname_error() {
 
     let addr = t!("google.com:443".to_socket_addrs()).next().unwrap();
 
-    let mut l = t!(Core::new());
     let client = TcpStream::connect(&addr);
     let data = client.and_then(move |socket| {
                                    let builder = t!(TlsConnector::builder());
@@ -129,7 +131,12 @@ fn wrong_hostname_error() {
                                        .map_err(native2io)
                                });
 
-    let res = l.run(data);
-    assert!(res.is_err());
-    assert_bad_hostname_error(&res.err().unwrap());
+    tokio::run(
+        data.then(|res| {
+            assert!(res.is_err());
+            assert_bad_hostname_error(&res.err().unwrap());
+            Ok(())
+        })
+    );
+
 }

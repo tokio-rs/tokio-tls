@@ -1,7 +1,7 @@
 extern crate env_logger;
 extern crate futures;
 extern crate native_tls;
-extern crate tokio_core;
+extern crate tokio;
 extern crate tokio_tls;
 
 #[macro_use]
@@ -12,8 +12,7 @@ use std::net::ToSocketAddrs;
 
 use futures::Future;
 use native_tls::TlsConnector;
-use tokio_core::net::TcpStream;
-use tokio_core::reactor::Core;
+use tokio::net::TcpStream;
 use tokio_tls::TlsConnectorExt;
 
 macro_rules! t {
@@ -129,14 +128,13 @@ cfg_if! {
     }
 }
 
-fn get_host(host: &'static str) -> Error {
+fn get_host(host: &'static str) -> Box<Future<Item = (), Error = Error> + Send> {
     drop(env_logger::init());
 
     let addr = format!("{}:443", host);
     let addr = t!(addr.to_socket_addrs()).next().unwrap();
 
-    let mut l = t!(Core::new());
-    let client = TcpStream::connect(&addr, &l.handle());
+    let client = TcpStream::connect(&addr);
     let data = client.and_then(move |socket| {
         let builder = t!(TlsConnector::builder());
         let cx = t!(builder.build());
@@ -145,14 +143,24 @@ fn get_host(host: &'static str) -> Error {
         })
     });
 
-    let res = l.run(data);
-    assert!(res.is_err());
-    res.err().unwrap()
+    Box::new(
+        data
+            .then(|res| {
+                assert!(res.is_err());
+                Err(res.err().unwrap())
+            })
+    )
 }
 
 #[test]
 fn expired() {
-    assert_expired_error(&get_host("expired.badssl.com"))
+    tokio::run(
+        get_host("expired.badssl.com")
+            .then(|res| {
+                assert_expired_error(&res.err().unwrap());
+                Ok(())
+            })
+    );
 }
 
 // TODO: the OSX builders on Travis apparently fail this tests spuriously?
@@ -160,15 +168,33 @@ fn expired() {
 #[test]
 #[cfg_attr(all(target_os = "macos", feature = "force-openssl"), ignore)]
 fn wrong_host() {
-    assert_wrong_host(&get_host("wrong.host.badssl.com"))
+    tokio::run(
+        get_host("wrong.host.badssl.com")
+            .then(|res| {
+                assert_wrong_host(&res.err().unwrap());
+                Ok(())
+            })
+    );
 }
 
 #[test]
 fn self_signed() {
-    assert_self_signed(&get_host("self-signed.badssl.com"))
+    tokio::run(
+        get_host("self-signed.badssl.com")
+            .then(|res| {
+                assert_self_signed(&res.err().unwrap());
+                Ok(())
+            })
+    );
 }
 
 #[test]
 fn untrusted_root() {
-    assert_untrusted_root(&get_host("untrusted-root.badssl.com"))
+    tokio::run(
+        get_host("untrusted-root.badssl.com")
+            .then(|res| {
+                assert_untrusted_root(&res.err().unwrap());
+                Ok(())
+            })
+    );
 }
