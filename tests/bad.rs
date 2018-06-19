@@ -51,21 +51,8 @@ cfg_if! {
                             not(target_os = "ios"))))] {
         extern crate openssl;
 
-        use openssl::ssl;
-        use native_tls::backend::openssl::ErrorExt;
-
-        fn get(err: &Error) -> &openssl::error::ErrorStack {
-            let err = err.get_ref().unwrap();
-            match *err.downcast_ref::<native_tls::Error>().unwrap().openssl_error() {
-                ssl::Error::Ssl(ref v) => v,
-                ref e => panic!("not an ssl eror: {:?}", e),
-            }
-        }
-
         fn verify_failed(err: &Error) {
-            assert!(get(err).errors().iter().any(|e| {
-                e.reason() == Some("certificate verify failed")
-            }), "bad errors: {:?}", err);
+            assert!(format!("{}", err).contains("certificate verify failed"))
         }
 
         use verify_failed as assert_expired_error;
@@ -73,13 +60,9 @@ cfg_if! {
         use verify_failed as assert_self_signed;
         use verify_failed as assert_untrusted_root;
     } else if #[cfg(any(target_os = "macos", target_os = "ios"))] {
-        use native_tls::backend::security_framework::ErrorExt;
 
         fn assert_invalid_cert_chain(err: &Error) {
-            let err = err.get_ref().unwrap();
-            let err = err.downcast_ref::<native_tls::Error>().unwrap();
-            let err = err.security_framework_error();
-            assert_eq!(err.message().unwrap(), "The trust policy was not trusted.");
+            assert!(format!("{}", err).contains("The trust policy was not trusted."))
         }
 
         use assert_invalid_cert_chain as assert_expired_error;
@@ -89,7 +72,6 @@ cfg_if! {
     } else {
         extern crate winapi;
 
-        use native_tls::backend::schannel::ErrorExt;
         use winapi::shared::winerror::*;
 
         fn assert_expired_error(err: &Error) {
@@ -138,8 +120,8 @@ fn get_host(host: &'static str) -> Error {
     let mut l = t!(Core::new());
     let client = TcpStream::connect(&addr, &l.handle());
     let data = client.and_then(move |socket| {
-        let builder = t!(TlsConnector::builder());
-        let cx = t!(builder.build());
+        let builder = TlsConnector::builder();
+        let cx = builder.build().unwrap();
         cx.connect_async(host, socket).map_err(|e| {
             Error::new(io::ErrorKind::Other, e)
         })

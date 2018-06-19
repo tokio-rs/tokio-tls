@@ -30,7 +30,7 @@ mod imp {
     use futures::future::{ok, Future};
     use hyper::server::Http;
     use hyper::{Request, Response, StatusCode};
-    use native_tls::{TlsAcceptor, Pkcs12};
+    use native_tls::{TlsAcceptor, Identity};
     use self::tokio_proto::TcpServer;
     use tokio_service::Service;
     use tokio_tls::proto;
@@ -40,9 +40,8 @@ mod imp {
         // accepted. This is where we pass in the certificate as well to
         // send to clients.
         let der = include_bytes!("identity.p12");
-        let cert = Pkcs12::from_der(der, "mypass").unwrap();
-        let tls_cx = TlsAcceptor::builder(cert).unwrap()
-                                .build().unwrap();
+        let cert = Identity::from_pkcs12(der, "mypass").unwrap();
+        let tls_cx = TlsAcceptor::builder(cert).build().unwrap();
 
         // Wrap up hyper's `Http` protocol in our own `Server` protocol. This
         // will run hyper's protocol and then wrap the result in a TLS stream,

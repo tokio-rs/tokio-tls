@@ -19,7 +19,7 @@ appveyor = { repository = "alexcrichton/tokio-tls" }
 
 [dependencies]
 futures = "0.1.11"
-native-tls = "0.1"
+native-tls = {git = "https://github.com/sfackler/rust-native-tls.git"}
 tokio-core = "0.1.6"
 tokio-io = "0.1"
 tokio-proto = { version = "0.1", optional = true }

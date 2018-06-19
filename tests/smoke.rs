@@ -18,7 +18,7 @@ use tokio_io::io::{read_to_end, copy, shutdown};
 use tokio_core::reactor::Core;
 use tokio_core::net::{TcpListener, TcpStream};
 use tokio_tls::{TlsConnectorExt, TlsAcceptorExt};
-use native_tls::{TlsConnector, TlsAcceptor, Pkcs12};
+use native_tls::{TlsConnector, TlsAcceptor, Identity, Certificate};
 
 macro_rules! t {
     ($e:expr) => (match $e {
@@ -120,8 +120,6 @@ cfg_if! {
         use std::process::Command;
         use std::sync::{ONCE_INIT, Once};
 
-        use tokio_tls::backend::rustls::ClientContextExt;
-        use tokio_tls::backend::rustls::ServerContextExt;
         use untrusted::Input;
         use webpki::trust_anchor_util;
 
@@ -220,32 +218,16 @@ cfg_if! {
         use std::env;
         use std::sync::{Once, ONCE_INIT};
 
-        use openssl::x509::X509;
-
-        use native_tls::backend::openssl::TlsConnectorBuilderExt;
-
         fn contexts() -> (TlsAcceptor, TlsConnector) {
             let keys = openssl_keys();
 
-            let pkcs12 = t!(Pkcs12::from_der(&keys.pkcs12_der, "foobar"));
-            let srv = t!(TlsAcceptor::builder(pkcs12));
+            let pkcs12 = t!(Identity::from_pkcs12(&keys.pkcs12_der, "foobar"));
+            let srv = TlsAcceptor::builder(pkcs12);
 
-            let cert = t!(X509::from_der(&keys.cert_der));
+            let cert = t!(Certificate::from_der(&keys.cert_der));
 
-            // Unfortunately looks like the only way to configure this is
-            // `set_CA_file` file on the client side so we have to actually
-            // emit the certificate to a file. Do so next to our own binary
-            // which is likely ephemeral as well.
-            let path = t!(env::current_exe());
-            let path = path.parent().unwrap().join("custom.crt");
-            static INIT: Once = ONCE_INIT;
-            INIT.call_once(|| {
-                t!(t!(File::create(&path)).write_all(&t!(cert.to_pem())));
-            });
-            let mut client = t!(TlsConnector::builder());
-            t!(client.builder_mut()
-                     .builder_mut()
-                     .set_ca_file(&path));
+            let mut client = TlsConnector::builder();
+            t!(client.add_root_certificate(cert).build());
 
             (t!(srv.build()), t!(client.build()))
         }
@@ -258,16 +240,14 @@ cfg_if! {
 
         use security_framework::certificate::SecCertificate;
 
-        use native_tls::backend::security_framework::TlsConnectorBuilderExt;
-
         fn contexts() -> (TlsAcceptor, TlsConnector) {
             let keys = openssl_keys();
 
-            let pkcs12 = t!(Pkcs12::from_der(&keys.pkcs12_der, "foobar"));
-            let srv = t!(TlsAcceptor::builder(pkcs12));
+            let pkcs12 = t!(Identity::from_pkcs12(&keys.pkcs12_der, "foobar"));
+            let srv = TlsAcceptor::builder(pkcs12);
 
-            let cert = SecCertificate::from_der(&keys.cert_der).unwrap();
-            let mut client = t!(TlsConnector::builder());
+            let cert = SecCertificate::from_pkcs12(&keys.cert_der).unwrap();
+            let mut client = TlsConnector::builder();
             client.anchor_certificates(&[cert]);
 
             (t!(srv.build()), t!(client.build()))
@@ -301,10 +281,10 @@ cfg_if! {
             let mut store = t!(Memory::new()).into_store();
             t!(store.add_cert(&cert, CertAdd::Always));
             let pkcs12_der = t!(store.export_pkcs12("foobar"));
-            let pkcs12 = t!(Pkcs12::from_der(&pkcs12_der, "foobar"));
+            let pkcs12 = t!(Identity::from_pkcs12(&pkcs12_der, "foobar"));
 
             let srv = t!(TlsAcceptor::builder(pkcs12));
-            let client = t!(TlsConnector::builder());
+            let client = TlsConnector::builder();
             (t!(srv.build()), t!(client.build()))
         }
 
