@@ -1,7 +1,7 @@
 extern crate env_logger;
 extern crate futures;
 extern crate native_tls;
-extern crate tokio_core;
+extern crate tokio;
 extern crate tokio_tls;
 
 #[macro_use]
@@ -12,8 +12,8 @@ use std::net::ToSocketAddrs;
 
 use futures::Future;
 use native_tls::TlsConnector;
-use tokio_core::net::TcpStream;
-use tokio_core::reactor::Core;
+use tokio::net::TcpStream;
+use tokio::runtime::Runtime;
 use tokio_tls::TlsConnectorExt;
 
 macro_rules! t {
@@ -117,8 +117,8 @@ fn get_host(host: &'static str) -> Error {
     let addr = format!("{}:443", host);
     let addr = t!(addr.to_socket_addrs()).next().unwrap();
 
-    let mut l = t!(Core::new());
-    let client = TcpStream::connect(&addr, &l.handle());
+    let mut l = t!(Runtime::new());
+    let client = TcpStream::connect(&addr);
     let data = client.and_then(move |socket| {
         let builder = TlsConnector::builder();
         let cx = builder.build().unwrap();
@@ -127,7 +127,7 @@ fn get_host(host: &'static str) -> Error {
         })
     });
 
-    let res = l.run(data);
+    let res = l.block_on(data);
     assert!(res.is_err());
     res.err().unwrap()
 }

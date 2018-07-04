@@ -21,19 +21,15 @@
 #[cfg_attr(feature = "tokio-proto", macro_use)]
 extern crate futures;
 extern crate native_tls;
+extern crate tokio;
 #[macro_use]
-extern crate tokio_core;
 extern crate tokio_io;
 
 use std::io::{self, Read, Write};
 
 use futures::{Poll, Future, Async};
 use native_tls::{HandshakeError, Error, TlsConnector, TlsAcceptor};
-#[allow(deprecated)]
-use tokio_core::io::Io;
 use tokio_io::{AsyncRead, AsyncWrite};
-
-pub mod proto;
 
 /// A wrapper around an underlying raw stream which implements the TLS or SSL
 /// protocol.
@@ -145,9 +141,6 @@ impl<S: Read + Write> Write for TlsStream<S> {
     }
 }
 
-#[allow(deprecated)]
-impl<S: Io> Io for TlsStream<S> {
-}
 
 impl<S: AsyncRead + AsyncWrite> AsyncRead for TlsStream<S> {
 }
