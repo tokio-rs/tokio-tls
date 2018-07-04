@@ -8,7 +8,7 @@ extern crate tokio_tls;
 #[macro_use]
 extern crate cfg_if;
 
-use std::io::{self, Error};
+use std::io;
 use std::net::ToSocketAddrs;
 
 use futures::Future;
@@ -27,7 +27,7 @@ macro_rules! t {
 
 cfg_if! {
     if #[cfg(feature = "force-rustls")] {
-        fn assert_bad_hostname_error(err: &Error) {
+        fn assert_bad_hostname_error(err: &io::Error) {
             let err = err.to_string();
             assert!(err.contains("CertNotValidForName"), "bad error: {}", err);
         }
@@ -37,36 +37,23 @@ cfg_if! {
                             not(target_os = "ios"))))] {
         extern crate openssl;
 
-        use openssl::ssl;
-        use native_tls::backend::openssl::ErrorExt;
-
-        fn assert_bad_hostname_error(err: &Error) {
+        fn assert_bad_hostname_error(err: &io::Error) {
             let err = err.get_ref().unwrap();
             let err = err.downcast_ref::<native_tls::Error>().unwrap();
-            let errs = match *err.openssl_error() {
-                ssl::Error::Ssl(ref v) => v,
-                ref e => panic!("not an ssl eror: {:?}", e),
-            };
-            assert!(errs.errors().iter().any(|e| {
-                e.reason() == Some("certificate verify failed")
-            }), "bad errors: {:?}", errs);
+            assert!(format!("{}", err).contains("certificate verify failed"));
         }
     } else if #[cfg(any(target_os = "macos", target_os = "ios"))] {
-        use native_tls::backend::security_framework::ErrorExt;
-
-        fn assert_bad_hostname_error(err: &Error) {
+        fn assert_bad_hostname_error(err: &io::Error) {
             let err = err.get_ref().unwrap();
             let err = err.downcast_ref::<native_tls::Error>().unwrap();
-            let err = err.security_framework_error();
-            assert_eq!(err.message().unwrap(), "The trust policy was not trusted.");
+            assert!(format!("{}", err).contains("The trust policy was not trusted."));
         }
     } else {
         extern crate winapi;
 
-        use native_tls::backend::schannel::ErrorExt;
         use winapi::shared::winerror::*;
 
-        fn assert_bad_hostname_error(err: &Error) {
+        fn assert_bad_hostname_error(err: &io::Error) {
             let err = err.get_ref().unwrap();
             let err = err.downcast_ref::<native_tls::Error>().unwrap();
             let err = err.schannel_error();
@@ -95,7 +82,7 @@ fn fetch_google() {
     // Send off the request by first negotiating an SSL handshake, then writing
     // of our request, then flushing, then finally read off the response.
     let data = client.and_then(move |socket| {
-                                   let builder = t!(TlsConnector::builder());
+                                   let builder = TlsConnector::builder();
                                    let connector = t!(builder.build());
                                    connector.connect_async("google.com", socket).map_err(native2io)
                                })
@@ -124,7 +111,7 @@ fn wrong_hostname_error() {
     let mut l = t!(Core::new());
     let client = TcpStream::connect(&addr, &l.handle());
     let data = client.and_then(move |socket| {
-                                   let builder = t!(TlsConnector::builder());
+                                   let builder = TlsConnector::builder();
                                    let connector = t!(builder.build());
                                    connector.connect_async("rust-lang.org", socket)
                                        .map_err(native2io)
