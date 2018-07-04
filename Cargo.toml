@@ -26,7 +26,7 @@ tokio-io = "0.1"
 [dev-dependencies]
 cfg-if = "0.1"
 env_logger = { version = "0.4", default-features = false }
-hyper = "0.11"
+hyper = "0.12"
 tokio-service = "0.1"
 
 [target.'cfg(all(not(target_os = "macos"), not(windows), not(target_os = "ios")))'.dev-dependencies]

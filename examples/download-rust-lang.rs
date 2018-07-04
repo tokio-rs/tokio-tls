@@ -1,6 +1,6 @@
 extern crate futures;
 extern crate native_tls;
-extern crate tokio_core;
+extern crate tokio;
 extern crate tokio_io;
 extern crate tokio_tls;
 
@@ -9,18 +9,18 @@ use std::net::ToSocketAddrs;
 
 use futures::Future;
 use native_tls::TlsConnector;
-use tokio_core::net::TcpStream;
-use tokio_core::reactor::Core;
+use tokio::net::TcpStream;
+use tokio::runtime::Runtime;
 use tokio_tls::TlsConnectorExt;
 
 fn main() {
-    let mut core = Core::new().unwrap();
+    let mut runtime = Runtime::new().unwrap();
     let addr = "www.rust-lang.org:443".to_socket_addrs().unwrap().next().unwrap();
 
-    let socket = TcpStream::connect(&addr, &core.handle());
+    let socket = TcpStream::connect(&addr);
     let cx = TlsConnector::builder().build().unwrap();
 
-    let tls_handshake = socket.and_then(|socket| {
+    let tls_handshake = socket.and_then(move |socket| {
         cx.connect_async("www.rust-lang.org", socket).map_err(|e| {
             io::Error::new(io::ErrorKind::Other, e)
         })
@@ -36,6 +36,6 @@ fn main() {
         tokio_io::io::read_to_end(socket, Vec::new())
     });
 
-    let (_, data) = core.run(response).unwrap();
+    let (_, data) = runtime.block_on(response).unwrap();
     println!("{}", String::from_utf8_lossy(&data));
 }
