@@ -12,7 +12,6 @@ extern crate futures;
 extern crate hyper;
 extern crate native_tls;
 extern crate tokio;
-extern crate tokio_service;
 extern crate tokio_tls;
 
 use std::io;
