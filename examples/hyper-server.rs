@@ -2,7 +2,7 @@
 //!
 //! You can test this out by running:
 //!
-//!     cargo run --example hyper-server --features tokio-proto
+//!     cargo run --example hyper-server
 //!
 //! and it should print out an address that it's listening on. You can then
 //! connect to this server via HTTP to see "Hello, world!". Note that the TLS
@@ -14,70 +14,52 @@
 extern crate futures;
 extern crate hyper;
 extern crate native_tls;
-extern crate tokio_service;
+extern crate tokio;
 extern crate tokio_tls;
 
-fn main() {
-    imp::main();
+use std::io;
+
+use futures::future::Future;
+use futures::stream::Stream;
+use hyper::server::conn::Http;
+use hyper::service::service_fn_ok;
+use hyper::{Body, Response};
+use native_tls::{Identity, TlsAcceptor};
+use tokio::net::TcpListener;
+use tokio_tls::TlsAcceptorExt;
+
+pub fn main() {
+    // Create our TLS context through which new connections will be
+    // accepted. This is where we pass in the certificate as well to
+    // send to clients.
+    let der = include_bytes!("identity.p12");
+    let cert = Identity::from_pkcs12(der, "mypass").unwrap();
+    let tls_cx = TlsAcceptor::builder(cert).build().unwrap();
+
+    let new_service = || service_fn_ok(|_req| Response::new(Body::from("Hello World")));
+
+    let addr = "127.0.0.1:12345".parse().unwrap();
+    let srv = TcpListener::bind(&addr).expect("Error binding local port");
+    // Use lower lever hyper API to be able to intercept client connection
+    let http_proto = Http::new();
+    let http_server = http_proto
+        .serve_incoming(
+            srv.incoming().and_then(move |socket| {
+                tls_cx
+                    .accept_async(socket)
+                    .map_err(|e| io::Error::new(io::ErrorKind::Other, e))
+            }),
+            new_service,
+        )
+        .for_each(|conn| {
+            hyper::rt::spawn(
+                conn.and_then(|c| c.map(|r| r).map_err(|e| panic!("Hyper error {}", e)))
+                    .map_err(|e| eprintln!("Connection error {}", e)),
+            );
+            Ok(())
+        });
+
+    println!("Listening on {}", addr);
+
+    hyper::rt::run(http_server.map_err(|e| eprintln!("Error running server: {}", e)));
 }
-
-#[cfg(feature = "tokio-proto")]
-mod imp {
-    extern crate tokio_proto;
-
-    use std::io;
-
-    use futures::future::{ok, Future};
-    use hyper::server::Http;
-    use hyper::{Request, Response, StatusCode};
-    use native_tls::{TlsAcceptor, Identity};
-    use self::tokio_proto::TcpServer;
-    use tokio_service::Service;
-    use tokio_tls::proto;
-
-    pub fn main() {
-        // Create our TLS context through which new connections will be
-        // accepted. This is where we pass in the certificate as well to
-        // send to clients.
-        let der = include_bytes!("identity.p12");
-        let cert = Identity::from_pkcs12(der, "mypass").unwrap();
-        let tls_cx = TlsAcceptor::builder(cert).build().unwrap();
-
-        // Wrap up hyper's `Http` protocol in our own `Server` protocol. This
-        // will run hyper's protocol and then wrap the result in a TLS stream,
-        // performing a TLS handshake with connected clients.
-        let proto = proto::Server::new(Http::new(), tls_cx);
-
-        // Finally use `tokio-proto`'s `TcpServer` helper struct to quickly
-        // take our protocol above to running our hello-world Service on a
-        // local TCP port.
-        let addr = "127.0.0.1:12345".parse().unwrap();
-        let srv = TcpServer::new(proto, addr);
-        println!("Listening on {}", addr);
-        srv.serve(|| Ok(Hello));
-    }
-
-    struct Hello;
-
-    impl Service for Hello {
-        type Request = Request;
-        type Response = Response;
-        type Error = io::Error;
-        type Future = Box<Future<Item = Response, Error = io::Error>>;
-
-        fn call(&self, req: Request) -> Self::Future {
-            drop(req);
-            Box::new(ok(Response::new()
-                            .with_status(StatusCode::Ok)
-                            .with_body("Hello, world!\n")))
-        }
-    }
-}
-
-#[cfg(not(feature = "tokio-proto"))]
-mod imp {
-    pub fn main() {
-        println!("this example requires the `tokio-proto` feature to be enabled");
-    }
-}
-
