@@ -51,15 +51,27 @@ pub fn main() {
             }),
             new_service,
         )
-        .for_each(|conn| {
-            hyper::rt::spawn(
-                conn.and_then(|c| c.map_err(|e| panic!("Hyper error {}", e)))
-                    .map_err(|e| eprintln!("Connection error {}", e)),
-            );
+        .then(|res| {
+            match res {
+                Ok(conn) => Ok(Some(conn)),
+                Err(e) => {
+                    eprintln!("Error: {}", e);
+                    Ok(None)
+                },
+            }
+        })
+        .for_each(|conn_opt| {
+            if let Some(conn) = conn_opt {
+                hyper::rt::spawn(
+                    conn.and_then(|c| c.map_err(|e| panic!("Hyper error {}", e)))
+                        .map_err(|e| eprintln!("Connection error {}", e)),
+                );
+            }
+
             Ok(())
         });
 
     println!("Listening on {}", addr);
 
-    hyper::rt::run(http_server.map_err(|e| eprintln!("Error running server: {}", e)));
+    hyper::rt::run(http_server);
 }
