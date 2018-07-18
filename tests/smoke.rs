@@ -238,17 +238,15 @@ cfg_if! {
         use std::fs::File;
         use std::sync::{Once, ONCE_INIT};
 
-        use security_framework::certificate::SecCertificate;
-
         fn contexts() -> (TlsAcceptor, TlsConnector) {
             let keys = openssl_keys();
 
             let pkcs12 = t!(Identity::from_pkcs12(&keys.pkcs12_der, "foobar"));
             let srv = TlsAcceptor::builder(pkcs12);
 
-            let cert = SecCertificate::from_pkcs12(&keys.cert_der).unwrap();
+            let cert = Certificate::from_der(&keys.cert_der).unwrap();
             let mut client = TlsConnector::builder();
-            client.anchor_certificates(&[cert]);
+            t!(client.add_root_certificate(cert).build());
 
             (t!(srv.build()), t!(client.build()))
         }
