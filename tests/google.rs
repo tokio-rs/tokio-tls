@@ -46,7 +46,10 @@ cfg_if! {
         fn assert_bad_hostname_error(err: &io::Error) {
             let err = err.get_ref().unwrap();
             let err = err.downcast_ref::<native_tls::Error>().unwrap();
-            assert!(format!("{}", err).contains("The certificate was not trusted."));
+            let expected_10_12 = "The trust policy was not trusted.";
+            let expected_10_13 = "The certificate was not trusted.";
+            let actual = format!("{}", err);
+            assert!(actual.contains(expected_10_12) || actual.contains(expected_10_13));
         }
     } else {
         extern crate winapi;

@@ -62,7 +62,10 @@ cfg_if! {
     } else if #[cfg(any(target_os = "macos", target_os = "ios"))] {
 
         fn assert_invalid_cert_chain(err: &Error) {
-            assert!(format!("{}", err).contains("The certificate was not trusted."))
+            let expected_10_12 = "The trust policy was not trusted.";
+            let expected_10_13 = "The certificate was not trusted.";
+            let actual = format!("{}", err);
+            assert!(actual.contains(expected_10_12) || actual.contains(expected_10_13));
         }
 
         use assert_invalid_cert_chain as assert_expired_error;
