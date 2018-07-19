@@ -19,7 +19,7 @@ appveyor = { repository = "alexcrichton/tokio-tls" }
 
 [dependencies]
 futures = "0.1.11"
-native-tls = "0.1"
+native-tls = "0.2"
 tokio-core = "0.1.6"
 tokio-io = "0.1"
 tokio-proto = { version = "0.1", optional = true }
@@ -34,7 +34,7 @@ tokio-service = "0.1"
 openssl = "0.9"
 
 [target.'cfg(any(target_os = "macos", target_os = "ios"))'.dev-dependencies]
-security-framework = "0.1"
+security-framework = "0.2"
 
 [target.'cfg(windows)'.dev-dependencies]
 schannel = "0.1"

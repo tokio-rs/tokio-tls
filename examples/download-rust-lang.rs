@@ -18,7 +18,7 @@ fn main() {
     let addr = "www.rust-lang.org:443".to_socket_addrs().unwrap().next().unwrap();
 
     let socket = TcpStream::connect(&addr, &core.handle());
-    let cx = TlsConnector::builder().unwrap().build().unwrap();
+    let cx = TlsConnector::builder().build().unwrap();
 
     let tls_handshake = socket.and_then(|socket| {
         cx.connect_async("www.rust-lang.org", socket).map_err(|e| {

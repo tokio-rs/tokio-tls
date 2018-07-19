@@ -34,7 +34,7 @@ fn main() {
     // Create a custom "connector" for Hyper which will route connections
     // through the `TlsConnector` we create here after routing them through
     // `HttpConnector` first.
-    let tls_cx = TlsConnector::builder().unwrap().build().unwrap();
+    let tls_cx = TlsConnector::builder().build().unwrap();
     let mut connector = HttpsConnector {
         tls: Arc::new(tls_cx),
         http: HttpConnector::new(2, &core.handle()),
