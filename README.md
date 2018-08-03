@@ -29,10 +29,8 @@ extern crate tokio_tls;
 use tokio_tls::{TlsConnectorExt, TlsAcceptorExt};
 ```
 
-You can find an example of using this crate at [https://tokio.rs] along with a
-detailed explanation of what's happening.
-
-[https://tokio.rs]: https://tokio.rs/docs/getting-started/tls/
+You can find few examples how to use this crate in examples directory (using TLS in 
+hyper server or client).
 
 This crate provides two extension traits, `TlsConnectorExt` and
 `TlsAcceptorExt`, which augment the functionality provided by the [`native-tls`
@@ -68,5 +66,5 @@ at your option.
 ### Contribution
 
 Unless you explicitly state otherwise, any contribution intentionally submitted
-for inclusion in Serde by you, as defined in the Apache-2.0 license, shall be
+for inclusion in tokio-tls by you, as defined in the Apache-2.0 license, shall be
 dual licensed as above, without any additional terms or conditions.
