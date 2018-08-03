@@ -16,8 +16,8 @@ First, add this to your `Cargo.toml`:
 
 ```toml
 [dependencies]
-native-tls = "0.1"
-tokio-tls = "0.1"
+native-tls = "0.2"
+tokio-tls = "0.2"
 ```
 
 Next, add this to your crate:
@@ -53,18 +53,6 @@ backend for a TLS implementation. This means:
 
 Typically these selections mean that you don't have to worry about a portability
 when using TLS, these libraries are all normally installed by default.
-
-## Interaction with `tokio-proto`
-
-If you're working with a protocol that starts out with a TLS negotation on
-either the client or server side then you can use the `proto::Client` and
-`proto::Server` types in this crate for performing those tasks. To do so, you
-can update your dependency as such:
-
-```toml
-[dependencies]
-tokio-tls = { version = "0.1", features = ["tokio-proto"] }
-```
 
 # License
 
