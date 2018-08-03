@@ -1,6 +1,6 @@
 [package]
 name = "tokio-tls"
-version = "0.1.5"
+version = "0.2.0"
 authors = ["Carl Lerche <me@carllerche.com>",
            "Alex Crichton <alex@alexcrichton.com>"]
 license = "MIT/Apache-2.0"
@@ -18,12 +18,12 @@ travis-ci = { repository = "tokio-rs/tokio-tls" }
 appveyor = { repository = "alexcrichton/tokio-tls" }
 
 [dependencies]
-futures = "0.1"
+futures = "0.1.23"
 native-tls = "0.2"
-tokio = "0.1"
 tokio-io = "0.1"
 
 [dev-dependencies]
+tokio = "0.1"
 cfg-if = "0.1"
 env_logger = { version = "0.4", default-features = false }
 hyper = "0.12"
