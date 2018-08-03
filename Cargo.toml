@@ -29,10 +29,10 @@ env_logger = { version = "0.4", default-features = false }
 hyper = "0.12"
 
 [target.'cfg(all(not(target_os = "macos"), not(windows), not(target_os = "ios")))'.dev-dependencies]
-openssl = "0.9"
+openssl = "0.10"
 
 [target.'cfg(any(target_os = "macos", target_os = "ios"))'.dev-dependencies]
-security-framework = "0.1"
+security-framework = "0.2"
 
 [target.'cfg(windows)'.dev-dependencies]
 schannel = "0.1"
