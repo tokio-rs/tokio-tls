@@ -17,7 +17,6 @@ use tokio_io::{AsyncRead, AsyncWrite};
 use tokio_io::io::{read_to_end, copy, shutdown};
 use tokio::runtime::Runtime;
 use tokio::net::{TcpListener, TcpStream};
-use tokio_tls::{TlsConnectorExt, TlsAcceptorExt};
 use native_tls::{TlsConnector, TlsAcceptor, Identity, Certificate};
 
 macro_rules! t {
@@ -218,7 +217,7 @@ cfg_if! {
         use std::env;
         use std::sync::{Once, ONCE_INIT};
 
-        fn contexts() -> (TlsAcceptor, TlsConnector) {
+        fn contexts() -> (tokio_tls::TlsAcceptor, tokio_tls::TlsConnector) {
             let keys = openssl_keys();
 
             let pkcs12 = t!(Identity::from_pkcs12(&keys.pkcs12_der, "foobar"));
@@ -229,7 +228,7 @@ cfg_if! {
             let mut client = TlsConnector::builder();
             t!(client.add_root_certificate(cert).build());
 
-            (t!(srv.build()), t!(client.build()))
+            (t!(srv.build()).into(), t!(client.build()).into())
         }
     } else if #[cfg(any(target_os = "macos", target_os = "ios"))] {
         extern crate security_framework;
@@ -238,7 +237,7 @@ cfg_if! {
         use std::fs::File;
         use std::sync::{Once, ONCE_INIT};
 
-        fn contexts() -> (TlsAcceptor, TlsConnector) {
+        fn contexts() -> (tokio_tls::TlsAcceptor, tokio_tls::TlsConnector) {
             let keys = openssl_keys();
 
             let pkcs12 = t!(Identity::from_pkcs12(&keys.pkcs12_der, "foobar"));
@@ -248,7 +247,7 @@ cfg_if! {
             let mut client = TlsConnector::builder();
             client.add_root_certificate(cert);
 
-            (t!(srv.build()), t!(client.build()))
+            (t!(srv.build()).into(), t!(client.build()).into())
         }
     } else {
         extern crate schannel;
@@ -274,7 +273,7 @@ cfg_if! {
 
         const FRIENDLY_NAME: &'static str = "tokio-tls localhost testing cert";
 
-        fn contexts() -> (TlsAcceptor, TlsConnector) {
+        fn contexts() -> (tokio_tls::TlsAcceptor, tokio_tls::TlsConnector) {
             let cert = localhost_cert();
             let mut store = t!(Memory::new()).into_store();
             t!(store.add_cert(&cert, CertAdd::Always));
@@ -283,7 +282,7 @@ cfg_if! {
 
             let srv = t!(TlsAcceptor::builder(pkcs12));
             let client = TlsConnector::builder();
-            (t!(srv.build()), t!(client.build()))
+            (t!(srv.build()).into(), t!(client.build()).into())
         }
 
         // ====================================================================
@@ -513,7 +512,7 @@ fn client_to_server() {
     let received = socket.map(|mut socket| {
         socket.remove(0)
     }).and_then(move |socket| {
-        server_cx.accept_async(socket).map_err(native2io)
+        server_cx.accept(socket).map_err(native2io)
     }).and_then(|socket| {
         read_to_end(socket, Vec::new())
     });
@@ -522,7 +521,7 @@ fn client_to_server() {
     // then write a bunch of data to it.
     let client = TcpStream::connect(&addr);
     let sent = client.and_then(move |socket| {
-        client_cx.connect_async("localhost", socket).map_err(native2io)
+        client_cx.connect("localhost", socket).map_err(native2io)
     }).and_then(|socket| {
         copy(io::repeat(9).take(AMT), socket)
     }).and_then(|(amt, _repeat, socket)| {
@@ -550,7 +549,7 @@ fn server_to_client() {
     let sent = socket.map(|mut socket| {
         socket.remove(0)
     }).and_then(move |socket| {
-        server_cx.accept_async(socket).map_err(native2io)
+        server_cx.accept(socket).map_err(native2io)
     }).and_then(|socket| {
         copy(io::repeat(9).take(AMT), socket)
     }).and_then(|(amt, _repeat, socket)| {
@@ -559,7 +558,7 @@ fn server_to_client() {
 
     let client = TcpStream::connect(&addr);
     let received = client.and_then(move |socket| {
-        client_cx.connect_async("localhost", socket).map_err(native2io)
+        client_cx.connect("localhost", socket).map_err(native2io)
     }).and_then(|socket| {
         read_to_end(socket, Vec::new())
     });
@@ -612,7 +611,7 @@ fn one_byte_at_a_time() {
     let sent = socket.map(|mut socket| {
         socket.remove(0)
     }).and_then(move |socket| {
-        server_cx.accept_async(OneByte { inner: socket }).map_err(native2io)
+        server_cx.accept(OneByte { inner: socket }).map_err(native2io)
     }).and_then(|socket| {
         copy(io::repeat(9).take(AMT), socket)
     }).and_then(|(amt, _repeat, socket)| {
@@ -622,7 +621,7 @@ fn one_byte_at_a_time() {
     let client = TcpStream::connect(&addr);
     let received = client.and_then(move |socket| {
         let socket = OneByte { inner: socket };
-        client_cx.connect_async("localhost", socket).map_err(native2io)
+        client_cx.connect("localhost", socket).map_err(native2io)
     }).and_then(|socket| {
         read_to_end(socket, Vec::new())
     });

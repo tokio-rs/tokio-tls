@@ -23,10 +23,9 @@ use hyper::client::{HttpConnector};
 use hyper::client::connect::{Connect, Connected, Destination};
 use hyper::Body;
 use hyper::{Client, Request};
-use native_tls::TlsConnector;
 use tokio::net::TcpStream;
 use tokio::runtime::Runtime;
-use tokio_tls::{TlsConnectorExt, TlsStream};
+use tokio_tls::{TlsConnector, TlsStream};
 
 fn main() {
     let mut runtime = Runtime::new().unwrap();
@@ -34,9 +33,9 @@ fn main() {
     // Create a custom "connector" for Hyper which will route connections
     // through the `TlsConnector` we create here after routing them through
     // `HttpConnector` first.
-    let tls_cx = TlsConnector::builder().build().unwrap();
+    let tls_cx = native_tls::TlsConnector::builder().build().unwrap();
     let mut connector = HttpsConnector {
-        tls: Arc::new(tls_cx),
+        tls: Arc::new(tls_cx.into()),
         http: HttpConnector::new(2),
     };
     connector.http.enforce_http(false);
@@ -82,7 +81,7 @@ impl Connect for HttpsConnector {
 
         let tls_cx = self.tls.clone();
         Box::new(self.http.connect(dst).and_then(move |(tcp, connected)| {
-            tls_cx.connect_async(&host, tcp)
+            tls_cx.connect(&host, tcp)
                 .map(|s| (s, connected))
                 .map_err(|e| io::Error::new(io::ErrorKind::Other, e))
         }))
