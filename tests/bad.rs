@@ -14,7 +14,6 @@ use futures::Future;
 use native_tls::TlsConnector;
 use tokio::net::TcpStream;
 use tokio::runtime::Runtime;
-use tokio_tls::TlsConnectorExt;
 
 macro_rules! t {
     ($e:expr) => (match $e {
@@ -122,7 +121,8 @@ fn get_host(host: &'static str) -> Error {
     let data = client.and_then(move |socket| {
         let builder = TlsConnector::builder();
         let cx = builder.build().unwrap();
-        cx.connect_async(host, socket).map_err(|e| {
+        let cx = tokio_tls::TlsConnector::from(cx);
+        cx.connect(host, socket).map_err(|e| {
             Error::new(io::ErrorKind::Other, e)
         })
     });

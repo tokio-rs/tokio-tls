@@ -11,7 +11,6 @@ use futures::Future;
 use native_tls::TlsConnector;
 use tokio::net::TcpStream;
 use tokio::runtime::Runtime;
-use tokio_tls::TlsConnectorExt;
 
 fn main() {
     let mut runtime = Runtime::new().unwrap();
@@ -19,9 +18,10 @@ fn main() {
 
     let socket = TcpStream::connect(&addr);
     let cx = TlsConnector::builder().build().unwrap();
+    let cx = tokio_tls::TlsConnector::from(cx);
 
     let tls_handshake = socket.and_then(move |socket| {
-        cx.connect_async("www.rust-lang.org", socket).map_err(|e| {
+        cx.connect("www.rust-lang.org", socket).map_err(|e| {
             io::Error::new(io::ErrorKind::Other, e)
         })
     });

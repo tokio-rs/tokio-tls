@@ -26,7 +26,6 @@ use hyper::service::service_fn_ok;
 use hyper::{Body, Response};
 use native_tls::{Identity, TlsAcceptor};
 use tokio::net::TcpListener;
-use tokio_tls::TlsAcceptorExt;
 
 pub fn main() {
     // Create our TLS context through which new connections will be
@@ -35,6 +34,7 @@ pub fn main() {
     let der = include_bytes!("identity.p12");
     let cert = Identity::from_pkcs12(der, "mypass").unwrap();
     let tls_cx = TlsAcceptor::builder(cert).build().unwrap();
+    let tls_cx = tokio_tls::TlsAcceptor::from(tls_cx);
 
     let new_service = || service_fn_ok(|_req| Response::new(Body::from("Hello World")));
 
@@ -46,7 +46,7 @@ pub fn main() {
         .serve_incoming(
             srv.incoming().and_then(move |socket| {
                 tls_cx
-                    .accept_async(socket)
+                    .accept(socket)
                     .map_err(|e| io::Error::new(io::ErrorKind::Other, e))
             }),
             new_service,
