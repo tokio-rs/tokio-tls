@@ -16,8 +16,8 @@ First, add this to your `Cargo.toml`:
 
 ```toml
 [dependencies]
-native-tls = "0.1"
-tokio-tls = "0.1"
+native-tls = "0.2"
+tokio-tls = "0.2"
 ```
 
 Next, add this to your crate:
@@ -29,10 +29,8 @@ extern crate tokio_tls;
 use tokio_tls::{TlsConnectorExt, TlsAcceptorExt};
 ```
 
-You can find an example of using this crate at [https://tokio.rs] along with a
-detailed explanation of what's happening.
-
-[https://tokio.rs]: https://tokio.rs/docs/getting-started/tls/
+You can find few examples how to use this crate in examples directory (using TLS in 
+hyper server or client).
 
 This crate provides two extension traits, `TlsConnectorExt` and
 `TlsAcceptorExt`, which augment the functionality provided by the [`native-tls`
@@ -54,18 +52,6 @@ backend for a TLS implementation. This means:
 Typically these selections mean that you don't have to worry about a portability
 when using TLS, these libraries are all normally installed by default.
 
-## Interaction with `tokio-proto`
-
-If you're working with a protocol that starts out with a TLS negotation on
-either the client or server side then you can use the `proto::Client` and
-`proto::Server` types in this crate for performing those tasks. To do so, you
-can update your dependency as such:
-
-```toml
-[dependencies]
-tokio-tls = { version = "0.1", features = ["tokio-proto"] }
-```
-
 # License
 
 This project is licensed under either of
@@ -80,5 +66,5 @@ at your option.
 ### Contribution
 
 Unless you explicitly state otherwise, any contribution intentionally submitted
-for inclusion in Serde by you, as defined in the Apache-2.0 license, shall be
+for inclusion in tokio-tls by you, as defined in the Apache-2.0 license, shall be
 dual licensed as above, without any additional terms or conditions.

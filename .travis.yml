@@ -20,7 +20,6 @@ matrix:
 script:
   - cargo build
   - cargo test
-  - cargo test --features tokio-proto
 
 env:
   global:

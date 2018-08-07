@@ -1,7 +1,7 @@
 extern crate env_logger;
 extern crate futures;
 extern crate native_tls;
-extern crate tokio_core;
+extern crate tokio;
 extern crate tokio_io;
 extern crate tokio_tls;
 
@@ -15,10 +15,10 @@ use futures::{Future, Poll};
 use futures::stream::Stream;
 use tokio_io::{AsyncRead, AsyncWrite};
 use tokio_io::io::{read_to_end, copy, shutdown};
-use tokio_core::reactor::Core;
-use tokio_core::net::{TcpListener, TcpStream};
+use tokio::runtime::Runtime;
+use tokio::net::{TcpListener, TcpStream};
 use tokio_tls::{TlsConnectorExt, TlsAcceptorExt};
-use native_tls::{TlsConnector, TlsAcceptor, Pkcs12};
+use native_tls::{TlsConnector, TlsAcceptor, Identity, Certificate};
 
 macro_rules! t {
     ($e:expr) => (match $e {
@@ -120,8 +120,6 @@ cfg_if! {
         use std::process::Command;
         use std::sync::{ONCE_INIT, Once};
 
-        use tokio_tls::backend::rustls::ClientContextExt;
-        use tokio_tls::backend::rustls::ServerContextExt;
         use untrusted::Input;
         use webpki::trust_anchor_util;
 
@@ -220,32 +218,16 @@ cfg_if! {
         use std::env;
         use std::sync::{Once, ONCE_INIT};
 
-        use openssl::x509::X509;
-
-        use native_tls::backend::openssl::TlsConnectorBuilderExt;
-
         fn contexts() -> (TlsAcceptor, TlsConnector) {
             let keys = openssl_keys();
 
-            let pkcs12 = t!(Pkcs12::from_der(&keys.pkcs12_der, "foobar"));
-            let srv = t!(TlsAcceptor::builder(pkcs12));
+            let pkcs12 = t!(Identity::from_pkcs12(&keys.pkcs12_der, "foobar"));
+            let srv = TlsAcceptor::builder(pkcs12);
 
-            let cert = t!(X509::from_der(&keys.cert_der));
+            let cert = t!(Certificate::from_der(&keys.cert_der));
 
-            // Unfortunately looks like the only way to configure this is
-            // `set_CA_file` file on the client side so we have to actually
-            // emit the certificate to a file. Do so next to our own binary
-            // which is likely ephemeral as well.
-            let path = t!(env::current_exe());
-            let path = path.parent().unwrap().join("custom.crt");
-            static INIT: Once = ONCE_INIT;
-            INIT.call_once(|| {
-                t!(t!(File::create(&path)).write_all(&t!(cert.to_pem())));
-            });
-            let mut client = t!(TlsConnector::builder());
-            t!(client.builder_mut()
-                     .builder_mut()
-                     .set_ca_file(&path));
+            let mut client = TlsConnector::builder();
+            t!(client.add_root_certificate(cert).build());
 
             (t!(srv.build()), t!(client.build()))
         }
@@ -256,19 +238,15 @@ cfg_if! {
         use std::fs::File;
         use std::sync::{Once, ONCE_INIT};
 
-        use security_framework::certificate::SecCertificate;
-
-        use native_tls::backend::security_framework::TlsConnectorBuilderExt;
-
         fn contexts() -> (TlsAcceptor, TlsConnector) {
             let keys = openssl_keys();
 
-            let pkcs12 = t!(Pkcs12::from_der(&keys.pkcs12_der, "foobar"));
-            let srv = t!(TlsAcceptor::builder(pkcs12));
+            let pkcs12 = t!(Identity::from_pkcs12(&keys.pkcs12_der, "foobar"));
+            let srv = TlsAcceptor::builder(pkcs12);
 
-            let cert = SecCertificate::from_der(&keys.cert_der).unwrap();
-            let mut client = t!(TlsConnector::builder());
-            client.anchor_certificates(&[cert]);
+            let cert = Certificate::from_der(&keys.cert_der).unwrap();
+            let mut client = TlsConnector::builder();
+            client.add_root_certificate(cert);
 
             (t!(srv.build()), t!(client.build()))
         }
@@ -301,10 +279,10 @@ cfg_if! {
             let mut store = t!(Memory::new()).into_store();
             t!(store.add_cert(&cert, CertAdd::Always));
             let pkcs12_der = t!(store.export_pkcs12("foobar"));
-            let pkcs12 = t!(Pkcs12::from_der(&pkcs12_der, "foobar"));
+            let pkcs12 = t!(Identity::from_pkcs12(&pkcs12_der, "foobar"));
 
             let srv = t!(TlsAcceptor::builder(pkcs12));
-            let client = t!(TlsConnector::builder());
+            let client = TlsConnector::builder();
             (t!(srv.build()), t!(client.build()))
         }
 
@@ -521,10 +499,10 @@ const AMT: u64 = 128 * 1024;
 #[test]
 fn client_to_server() {
     drop(env_logger::init());
-    let mut l = t!(Core::new());
+    let mut l = t!(Runtime::new());
 
     // Create a server listening on a port, then figure out what that port is
-    let srv = t!(TcpListener::bind(&t!("127.0.0.1:0".parse()), &l.handle()));
+    let srv = t!(TcpListener::bind(&t!("127.0.0.1:0".parse())));
     let addr = t!(srv.local_addr());
 
     let (server_cx, client_cx) = contexts();
@@ -533,7 +511,7 @@ fn client_to_server() {
     // read all the data from it.
     let socket = srv.incoming().take(1).collect();
     let received = socket.map(|mut socket| {
-        socket.remove(0).0
+        socket.remove(0)
     }).and_then(move |socket| {
         server_cx.accept_async(socket).map_err(native2io)
     }).and_then(|socket| {
@@ -542,7 +520,7 @@ fn client_to_server() {
 
     // Create a future to connect to our server, connect the ssl stream, and
     // then write a bunch of data to it.
-    let client = TcpStream::connect(&addr, &l.handle());
+    let client = TcpStream::connect(&addr);
     let sent = client.and_then(move |socket| {
         client_cx.connect_async("localhost", socket).map_err(native2io)
     }).and_then(|socket| {
@@ -552,7 +530,7 @@ fn client_to_server() {
     });
 
     // Finally, run everything!
-    let (amt, (_, data)) = t!(l.run(sent.join(received)));
+    let (amt, (_, data)) = t!(l.block_on(sent.join(received)));
     assert_eq!(amt, AMT);
     assert!(data == vec![9; amt as usize]);
 }
@@ -560,17 +538,17 @@ fn client_to_server() {
 #[test]
 fn server_to_client() {
     drop(env_logger::init());
-    let mut l = t!(Core::new());
+    let mut l = t!(Runtime::new());
 
     // Create a server listening on a port, then figure out what that port is
-    let srv = t!(TcpListener::bind(&t!("127.0.0.1:0".parse()), &l.handle()));
+    let srv = t!(TcpListener::bind(&t!("127.0.0.1:0".parse())));
     let addr = t!(srv.local_addr());
 
     let (server_cx, client_cx) = contexts();
 
     let socket = srv.incoming().take(1).collect();
     let sent = socket.map(|mut socket| {
-        socket.remove(0).0
+        socket.remove(0)
     }).and_then(move |socket| {
         server_cx.accept_async(socket).map_err(native2io)
     }).and_then(|socket| {
@@ -579,7 +557,7 @@ fn server_to_client() {
         shutdown(socket).map(move |_| amt)
     });
 
-    let client = TcpStream::connect(&addr, &l.handle());
+    let client = TcpStream::connect(&addr);
     let received = client.and_then(move |socket| {
         client_cx.connect_async("localhost", socket).map_err(native2io)
     }).and_then(|socket| {
@@ -587,7 +565,7 @@ fn server_to_client() {
     });
 
     // Finally, run everything!
-    let (amt, (_, data)) = t!(l.run(sent.join(received)));
+    let (amt, (_, data)) = t!(l.block_on(sent.join(received)));
     assert_eq!(amt, AMT);
     assert!(data == vec![9; amt as usize]);
 }
@@ -623,16 +601,16 @@ impl<S: AsyncWrite> AsyncWrite for OneByte<S> {
 fn one_byte_at_a_time() {
     const AMT: u64 = 1024;
     drop(env_logger::init());
-    let mut l = t!(Core::new());
+    let mut l = t!(Runtime::new());
 
-    let srv = t!(TcpListener::bind(&t!("127.0.0.1:0".parse()), &l.handle()));
+    let srv = t!(TcpListener::bind(&t!("127.0.0.1:0".parse())));
     let addr = t!(srv.local_addr());
 
     let (server_cx, client_cx) = contexts();
 
     let socket = srv.incoming().take(1).collect();
     let sent = socket.map(|mut socket| {
-        socket.remove(0).0
+        socket.remove(0)
     }).and_then(move |socket| {
         server_cx.accept_async(OneByte { inner: socket }).map_err(native2io)
     }).and_then(|socket| {
@@ -641,7 +619,7 @@ fn one_byte_at_a_time() {
         shutdown(socket).map(move |_| amt)
     });
 
-    let client = TcpStream::connect(&addr, &l.handle());
+    let client = TcpStream::connect(&addr);
     let received = client.and_then(move |socket| {
         let socket = OneByte { inner: socket };
         client_cx.connect_async("localhost", socket).map_err(native2io)
@@ -649,7 +627,7 @@ fn one_byte_at_a_time() {
         read_to_end(socket, Vec::new())
     });
 
-    let (amt, (_, data)) = t!(l.run(sent.join(received)));
+    let (amt, (_, data)) = t!(l.block_on(sent.join(received)));
     assert_eq!(amt, AMT);
     assert!(data == vec![9; amt as usize]);
 }

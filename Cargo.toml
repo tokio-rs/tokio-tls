@@ -1,6 +1,6 @@
 [package]
 name = "tokio-tls"
-version = "0.1.4"
+version = "0.2.0"
 authors = ["Carl Lerche <me@carllerche.com>",
            "Alex Crichton <alex@alexcrichton.com>"]
 license = "MIT/Apache-2.0"
@@ -18,23 +18,21 @@ travis-ci = { repository = "tokio-rs/tokio-tls" }
 appveyor = { repository = "alexcrichton/tokio-tls" }
 
 [dependencies]
-futures = "0.1.11"
-native-tls = "0.1"
-tokio-core = "0.1.6"
+futures = "0.1.23"
+native-tls = "0.2"
 tokio-io = "0.1"
-tokio-proto = { version = "0.1", optional = true }
 
 [dev-dependencies]
+tokio = "0.1"
 cfg-if = "0.1"
 env_logger = { version = "0.4", default-features = false }
-hyper = "0.11"
-tokio-service = "0.1"
+hyper = "0.12"
 
 [target.'cfg(all(not(target_os = "macos"), not(windows), not(target_os = "ios")))'.dev-dependencies]
-openssl = "0.9"
+openssl = "0.10"
 
 [target.'cfg(any(target_os = "macos", target_os = "ios"))'.dev-dependencies]
-security-framework = "0.1"
+security-framework = "0.2"
 
 [target.'cfg(windows)'.dev-dependencies]
 schannel = "0.1"
