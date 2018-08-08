@@ -1,3 +1,7 @@
+# This repository is deprecated!
+
+This crate has moved to https://github.com/tokio-rs/tokio/tree/master/tokio-tls.
+
 # tokio-tls
 
 An implementation of TLS/SSL streams for Tokio built on top of the [`native-tls`
